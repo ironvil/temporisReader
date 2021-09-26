@@ -1,3 +1,10 @@
-function ReadingScreen() {}
+import React from "react";
+import ReadingTextSection from "./reading-text-section/ReadingTextSection";
+import {useWindowDimensions} from "react-native";
 
-export default ReadingScreen;
+function ReadingScreen() {
+  const {width, height} = useWindowDimensions();
+  return <ReadingTextSection width={width} height={height} />;
+}
+
+export default React.memo(ReadingScreen);
