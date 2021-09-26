@@ -1,9 +1,8 @@
-import React from 'react';
-import {SafeAreaView, useColorScheme} from 'react-native';
+import React from "react";
 
-import {Colors} from 'react-native/Libraries/NewAppScreen';
-import ReadingScreen from './src/reading-screen/ReadingScreen';
-import styled from 'styled-components/native';
+import {Colors} from "react-native/Libraries/NewAppScreen";
+import ReadingScreen from "./src/reading-screen/ReadingScreen";
+import styled from "styled-components/native";
 
 const AppBackground = styled.SafeAreaView`
   background-color: ${Colors.darker};
