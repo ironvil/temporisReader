@@ -11,6 +11,5 @@ module.exports = {
   ],
   rules: {
     "no-console": 1, // Means warning
-    "prettier/prettier": ["error", {singleQuote: false}],
   },
 };
