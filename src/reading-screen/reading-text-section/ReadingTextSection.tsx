@@ -1,5 +1,6 @@
-import React, {useCallback, useState} from "react";
+import React, {useCallback, useEffect, useRef, useState} from "react";
 import styled from "styled-components/native";
+import {useGetTextOfCorrectLength} from "../hooks/useGetTextOfCorrectLength";
 
 const BodyText = styled.Text`
   font-size: 18px;
@@ -21,9 +22,8 @@ const FakeView = styled.ScrollView`
 type ReadingTextSectionProps = {width: number; height: number};
 
 function ReadingTextSection(props: ReadingTextSectionProps) {
-  const text =
-    "\n" +
-    "\n" +
+  useEffect(() => console.time("rendering and gettting size"), []);
+  const fullText =
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed rutrum tristique congue. Vestibulum auctor eu velit sed molestie. Pellentesque ac leo ut risus volutpat consequat et vitae elit. Fusce a nunc ultrices, aliquet ipsum eu, egestas est. Duis venenatis nisl ex, vel placerat diam dapibus vitae. Nunc porttitor placerat nibh, interdum imperdiet quam facilisis at. Phasellus vitae metus a augue rutrum posuere. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi mattis imperdiet ligula tristique blandit. Sed libero nisi, cursus sed aliquam sit amet, tempor vel nulla. Nulla facilisi. Pellentesque blandit, ipsum sed tincidunt semper, arcu magna placerat diam, at lobortis purus risus vel risus. Quisque pellentesque quis sapien vestibulum feugiat. Sed id aliquam diam. Donec eu velit condimentum mi placerat tincidunt.\n" +
     "\n" +
     "Sed placerat sagittis metus, at ullamcorper eros tincidunt nec. Curabitur imperdiet erat sed libero efficitur laoreet. Curabitur venenatis arcu diam, quis gravida diam rutrum nec. Cras scelerisque commodo lacinia. Sed molestie tincidunt dignissim. Vivamus auctor mi sed felis condimentum condimentum. Vestibulum nisi nisi, pharetra a libero vel, molestie volutpat arcu. Nullam pellentesque sapien at eros rutrum tempus quis non enim. Sed malesuada sagittis eros quis scelerisque. Nullam a eros vitae velit finibus varius.\n" +
@@ -34,45 +34,52 @@ function ReadingTextSection(props: ReadingTextSectionProps) {
     "\n" +
     "Aliquam fringilla quis nulla ac lacinia. Sed tempus, libero ut laoreet bibendum, lectus risus gravida enim, vitae maximus risus odio vel neque. Aenean rutrum sed enim et luctus. In sit amet nisl massa. Pellentesque feugiat tempus sagittis. Curabitur ut sollicitudin diam. Morbi feugiat consequat enim. Fusce rutrum odio sit amet sapien consequat placerat. Mauris tristique dictum lectus non consequat. Morbi eget pellentesque tortor. ";
 
-  const [textHeight, setTextHeight] = useState(-1);
-  const [backgroundHeight, setBackgroundHeight] = useState(-1);
-  const [textCut, setTextCut] = useState(text.length);
-  const onTextLayout = useCallback(
-    event => {
-      const newHeight = event.nativeEvent.layout.height;
-      console.log("event", backgroundHeight, newHeight);
-      if (newHeight !== textHeight) {
-        setTextHeight(newHeight);
-        if (newHeight > backgroundHeight) {
-          console.log();
-          setTextCut(Math.floor(textCut / 2));
-        }
-      }
-    },
-    [textCut, textHeight, backgroundHeight],
+  const getText = useCallback(
+    numOfChar => fullText.substring(0, numOfChar),
+    [fullText],
   );
-  const onBackgroundLayout = useCallback(
-    event => {
-      const newHeight = event.nativeEvent.layout.height;
-      if (newHeight !== backgroundHeight) {
-        setBackgroundHeight(newHeight);
-      }
-    },
-    [backgroundHeight],
-  );
-  console.log(backgroundHeight, textHeight, textCut);
 
-  const displayText = text.substring(0, textCut);
-  console.log(textCut, displayText);
+  const scrollRef = useRef(null);
+
+  const {textIsCorrectlySized, text, onHeightChanged, onMaxHeightChanged} =
+    useGetTextOfCorrectLength(getText, 400);
+
+  const [textHeight, setTextHeight] = useState(-1);
+
+  // const onLayoutChanged = useCallback(
+  //   event => {
+  //     const newHeight = event.nativeEvent.layout.height;
+  //     console.log("layout", newHeight, text.length);
+  //     setTextHeight(newHeight);
+  //     if (textHeight === -1 && newHeight !== -1) {
+  //       onHeightChanged(newHeight);
+  //     }
+  //   },
+  //   [onHeightChanged, textHeight],
+  // );
+
+  const onTextLayout = () => {
+    scrollRef.current.measure((x, y, width, height) => {
+      onHeightChanged(height);
+    });
+  };
+
+  if (textIsCorrectlySized) {
+    console.timeEnd("rendering and gettting size");
+    console.log(text);
+  }
 
   return (
-    <Background onLayout={onBackgroundLayout}>
-      {(textHeight === -1 || backgroundHeight < textHeight) && (
+    <Background
+      onLayout={event => onMaxHeightChanged(event.nativeEvent.layout.height)}>
+      {!textIsCorrectlySized && (
         <FakeView>
-          <BodyText onLayout={onTextLayout}>{displayText}</BodyText>
+          <BodyText ref={scrollRef} onTextLayout={onTextLayout}>
+            {text}
+          </BodyText>
         </FakeView>
       )}
-      <BodyText>{displayText}</BodyText>
+      {textIsCorrectlySized && <BodyText>{text}</BodyText>}
     </Background>
   );
 }
