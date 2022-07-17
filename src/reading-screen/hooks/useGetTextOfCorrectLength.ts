@@ -59,7 +59,6 @@ export function useGetTextOfCorrectLength(
 
   const onMaxHeightChanged = useCallback(
     newHeight => {
-      console.log("AAAAAAAAAAA", newHeight);
       setCurrentMaxHeight(newHeight);
       setIsDirty(true);
       if (isNowComplete) {
@@ -132,6 +131,14 @@ function calculateNextIteration({
     }
     newLowerBound = currentLength;
   } else if (currentHeight > currentMaxHeight) {
+    if (currentLength === lowerBound) {
+      newLowerBound = integerDivision(lowerBound, 2);
+      return {
+        newLowerBound,
+        newCurrentLength: newLowerBound,
+        newUpperBound,
+      };
+    }
     if (upperBound === currentLength && lowerBound + 1 === currentLength) {
       newUpperBound = lowerBound;
     } else {
