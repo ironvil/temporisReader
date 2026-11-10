@@ -13,7 +13,9 @@ import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentatio
 import { onSettingsChange } from '../settings';
 import { el } from '../ui/dom';
 import { iconButton } from '../ui/icons';
-import { knownWords, LEVELS, type Level } from '../vocab/known-words';
+import { openDialog } from '../ui/dialog';
+import { toast } from '../ui/dom';
+import { KNOWN, knownWords, LEVELS, wordsToMarkKnown, type Level } from '../vocab/known-words';
 import { LookupPopup } from './popup';
 
 const MARGIN_X = 20;
@@ -21,6 +23,8 @@ const MARGIN_Y = 16;
 const TAP_SLOP = 10;
 const SWIPE_THRESHOLD = 50;
 const SAVE_DELAY = 400;
+/** Pages read for less than this are skipped by the "mark unlooked-up words as known" prompt. */
+export const MIN_PAGE_DWELL_MS = 10_000;
 
 /** A place in the current chapter. */
 interface Position {
@@ -111,6 +115,9 @@ export class Reader {
   private pendingSave: Progress | null = null;
   private saveTimer: number | undefined;
   private lookupSeq = 0;
+  /** When the current page was turned to, and the words looked up on it since. */
+  private pageShownAt = Date.now();
+  private readonly pageLookups = new Set<string>();
   private gesture: Gesture | null = null;
   private layoutSize = '';
   private relayoutTimer: number | undefined;
@@ -146,7 +153,7 @@ export class Reader {
       if (changed.fontSize !== undefined) this.relayout();
     });
     document.addEventListener('keydown', (e) => {
-      if (this.root.hidden || !this.book) return;
+      if (this.root.hidden || !this.book || document.querySelector('dialog[open]')) return;
       if (e.key === 'ArrowRight' || e.key === 'PageDown') this.next();
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') this.prev();
       else if (e.key === 'Escape') this.closeLookup();
@@ -166,6 +173,7 @@ export class Reader {
     this.renderChapter(chapter);
     if (saved && saved.chapter === chapter) this.goTo(this.positionFromProgress(saved));
     else this.setPage(0);
+    this.startPageVisit();
   }
 
   async close(): Promise<void> {
@@ -198,11 +206,17 @@ export class Reader {
 
   next(): void {
     if (!this.book) return;
+    const atEnd = this.page === this.pageCount - 1 && this.chapterIndex === this.book.index.chapters.length - 1;
+    if (atEnd) return this.applyTransform(true);
+    // Collect before the page changes (the next chapter replaces the DOM).
+    const unlooked = this.unlookedWordsOnLeavingPage();
     if (this.page < this.pageCount - 1) this.setPage(this.page + 1, true);
-    else if (this.chapterIndex < this.book.index.chapters.length - 1) {
+    else {
       this.renderChapter(this.chapterIndex + 1);
       this.setPage(0);
-    } else this.applyTransform(true);
+    }
+    this.startPageVisit();
+    if (unlooked) this.offerMarkKnown(unlooked.language, unlooked.words);
   }
 
   prev(): void {
@@ -211,7 +225,65 @@ export class Reader {
     else if (this.chapterIndex > 0) {
       this.renderChapter(this.chapterIndex - 1);
       this.setPage(this.pageCount - 1);
-    } else this.applyTransform(true);
+    } else return this.applyTransform(true);
+    this.startPageVisit();
+  }
+
+  // ── Mark unlooked-up words as known ──────────────────────────────────────
+
+  private startPageVisit(): void {
+    this.pageShownAt = Date.now();
+    this.pageLookups.clear();
+  }
+
+  /**
+   * Words on the page being left that weren't looked up and aren't known yet — or null when the
+   * page was read for under MIN_PAGE_DWELL_MS, or when dictionary/known-words data isn't loaded
+   * (levels would be unreliable and known words could get their dates reset).
+   */
+  private unlookedWordsOnLeavingPage(): { language: string; words: string[] } | null {
+    const lang = this.lang;
+    if (!lang || Date.now() - this.pageShownAt < MIN_PAGE_DWELL_MS) return null;
+    const store = knownWords(lang.id);
+    if (!store.isLoaded || !lang.ready()) return null;
+    const words = wordsToMarkKnown(this.wordsOnPage(this.page), this.pageLookups, (w) => store.level(w), (w) => lang.isTrackable(w));
+    return words.length ? { language: lang.id, words } : null;
+  }
+
+  /** Words that start on `page`, in reading order (a word split by the page break belongs to the earlier page). */
+  private wordsOnPage(page: number): string[] {
+    const words: string[] = [];
+    const start = this.firstPositionOnPage(page);
+    for (let b = start.paragraph; b < this.blocks.length; b++) {
+      const block = this.blocks[b];
+      if (this.pageOfOffset(block, 0) > page) break;
+      const text = block.textContent ?? '';
+      for (const span of this.segmenter.segment(text)) {
+        if (!span.isWord || (b === start.paragraph && span.start < start.char)) continue;
+        const p = this.pageOfOffset(block, span.start);
+        if (p < page) continue;
+        if (p > page) break;
+        words.push(text.slice(span.start, span.end));
+      }
+    }
+    return words;
+  }
+
+  private offerMarkKnown(language: string, words: string[]): void {
+    const n = words.length;
+    openDialog({
+      title: 'Mark words as known?',
+      content: [
+        el('p', {}, `${n} ${n === 1 ? 'word' : 'words'} on the page you just read ${n === 1 ? 'wasn’t' : 'weren’t'} looked up:`),
+        el('div', { class: 'word-chips', lang: this.lang?.htmlLang }, ...words.map((w) => el('span', { class: 'word-chip' }, w))),
+      ],
+      cancelLabel: 'Not now',
+      confirmLabel: 'Mark known',
+      onConfirm: async () => {
+        await knownWords(language).setMany(words, KNOWN);
+        toast(`Marked ${n} ${n === 1 ? 'word' : 'words'} as known`);
+      },
+    });
   }
 
   private setPage(page: number, animate = false, keep?: Position): void {
@@ -490,6 +562,7 @@ export class Reader {
     }
     if (seq !== this.lookupSeq) return; // superseded by another tap or a page turn
     if (!result) return this.closeLookup();
+    this.pageLookups.add(result.headword);
 
     const range = this.charRange(block, result.start, result.end);
     if (!range) return this.closeLookup();

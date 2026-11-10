@@ -78,6 +78,11 @@ export interface LanguageModule<Entry = unknown> {
   /** True when lookups can be answered without waiting for a dictionary to load. */
   ready(): boolean;
   /**
+   * Whether a segmented word can be tracked as known (it has a dictionary entry). Must return
+   * false while dictionaries aren't loaded, so pages are never bulk-marked from guesses.
+   */
+  isTrackable(word: string): boolean;
+  /**
    * Finds the word at `index` in `paragraph` and looks it up.
    * Returns null when the tapped character isn't part of a word (punctuation, spaces…).
    */

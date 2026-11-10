@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mergeKnownWords, parseKnownWords, serializeKnownWords, today, type KnownWordsFile } from '../../src/vocab/known-words';
+import { markWords, mergeKnownWords, parseKnownWords, serializeKnownWords, today, wordsToMarkKnown, type KnownWordsFile, type Level } from '../../src/vocab/known-words';
 
 const SAMPLE = `{
   "version": 1,
@@ -60,4 +60,49 @@ test('merge with nothing new leaves updated alone', () => {
     unchanged: 1,
   });
   expect(target.updated).toBe('2026-11-01');
+});
+
+test.describe('wordsToMarkKnown', () => {
+  const levels: Record<string, Level> = { 已知: 3, 学一: 1, 学零: 0, 学二: 2 };
+  const levelOf = (w: string) => levels[w];
+  const trackable = (w: string) => w !== '不是词';
+
+  test('keeps page order and removes duplicates', () => {
+    expect(wordsToMarkKnown(['乙', '甲', '乙', '丙', '甲'], new Set(), levelOf, trackable)).toEqual(['乙', '甲', '丙']);
+  });
+
+  test('excludes looked-up words', () => {
+    expect(wordsToMarkKnown(['甲', '乙', '丙'], new Set(['乙']), levelOf, trackable)).toEqual(['甲', '丙']);
+  });
+
+  test('excludes known words but includes learning levels 0–2 and untracked words', () => {
+    expect(wordsToMarkKnown(['已知', '学零', '学一', '学二', '新'], new Set(), levelOf, trackable)).toEqual(['学零', '学一', '学二', '新']);
+  });
+
+  test('excludes words without a dictionary entry', () => {
+    expect(wordsToMarkKnown(['甲', '不是词'], new Set(), levelOf, trackable)).toEqual(['甲']);
+  });
+
+  test('nothing to offer', () => {
+    expect(wordsToMarkKnown([], new Set(), levelOf, trackable)).toEqual([]);
+    expect(wordsToMarkKnown(['已知', '甲'], new Set(['甲']), levelOf, trackable)).toEqual([]);
+  });
+});
+
+test.describe('markWords', () => {
+  test('sets level and date, adding missing words and overwriting existing ones', () => {
+    const file: KnownWordsFile = { version: 1, updated: '2026-01-01', words: { 甲: [1, '2026-01-01'], 乙: [3, '2026-01-01'] } };
+    markWords(file, ['甲', '丙'], 3, '2026-11-10');
+    expect(file).toEqual({
+      version: 1,
+      updated: '2026-11-10',
+      words: { 甲: [3, '2026-11-10'], 乙: [3, '2026-01-01'], 丙: [3, '2026-11-10'] },
+    });
+  });
+
+  test('no words leaves the file untouched', () => {
+    const file: KnownWordsFile = { version: 1, updated: '2026-01-01', words: { 甲: [1, '2026-01-01'] } };
+    markWords(file, [], 3, '2026-11-10');
+    expect(file).toEqual({ version: 1, updated: '2026-01-01', words: { 甲: [1, '2026-01-01'] } });
+  });
 });

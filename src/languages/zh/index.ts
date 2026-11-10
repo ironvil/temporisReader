@@ -9,6 +9,7 @@ import { formatInlinePinyin, formatPinyin, pinyinSyllables } from './pinyin';
 
 const HAN = /\p{Script=Han}/u;
 const HAN_RUN = /\p{Script=Han}+/gu;
+const ALL_HAN = /^\p{Script=Han}+$/u;
 
 export class ChineseLanguage implements LanguageModule<CedictEntry> {
   readonly id = 'zh';
@@ -36,6 +37,10 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
 
   ready(): boolean {
     return this.cedict.isReady();
+  }
+
+  isTrackable(word: string): boolean {
+    return ALL_HAN.test(word) && this.cedict.has(word);
   }
 
   async lookup(paragraph: string, index: number): Promise<LookupResult<CedictEntry> | null> {

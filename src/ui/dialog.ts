@@ -4,6 +4,7 @@ export interface DialogOptions {
   title: string;
   content: (HTMLElement | null)[];
   confirmLabel: string;
+  cancelLabel?: string;
   /** Return false (or throw) to keep the dialog open; thrown messages are shown in the dialog. */
   onConfirm: () => Promise<boolean | void> | boolean | void;
 }
@@ -11,7 +12,7 @@ export interface DialogOptions {
 /** Modal dialog built on <dialog>. Removes itself from the DOM when closed. */
 export function openDialog(options: DialogOptions): HTMLDialogElement {
   const error = el('p', { class: 'dialog-error', role: 'alert', hidden: true });
-  const cancel = el('button', { type: 'button', class: 'button secondary' }, 'Cancel');
+  const cancel = el('button', { type: 'button', class: 'button secondary' }, options.cancelLabel ?? 'Cancel');
   const confirm = el('button', { type: 'submit', class: 'button' }, options.confirmLabel);
   const form = el(
     'form',

@@ -78,9 +78,34 @@ export function mergeKnownWords(target: KnownWordsFile, incoming: KnownWordsFile
   return result;
 }
 
+/** Sets `words` to `level` with `date` (mutating `file`). */
+export function markWords(file: KnownWordsFile, words: readonly string[], level: Level, date = today()): void {
+  for (const word of words) file.words[word] = [level, date];
+  if (words.length) file.updated = date;
+}
+
+/**
+ * Words to offer as known after reading a page: words on the page (in order, de-duplicated) that
+ * are trackable (have a dictionary entry), weren't looked up, and aren't already known.
+ */
+export function wordsToMarkKnown(
+  pageWords: Iterable<string>,
+  lookedUp: ReadonlySet<string>,
+  levelOf: (word: string) => Level | undefined,
+  isTrackable: (word: string) => boolean,
+): string[] {
+  const out = new Set<string>();
+  for (const word of pageWords) {
+    if (out.has(word) || lookedUp.has(word) || levelOf(word) === KNOWN || !isTrackable(word)) continue;
+    out.add(word);
+  }
+  return [...out];
+}
+
 export class KnownWords {
   private file: KnownWordsFile = { version: 1, updated: today(), words: {} };
   private loading: Promise<void> | null = null;
+  private loaded = false;
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(readonly language: string) {}
@@ -91,6 +116,7 @@ export class KnownWords {
 
   load(): Promise<void> {
     this.loading ??= readText(this.path).then((text) => {
+      this.loaded = true;
       if (text === null) return;
       try {
         this.file = parseKnownWords(text);
@@ -99,6 +125,18 @@ export class KnownWords {
       }
     });
     return this.loading;
+  }
+
+  /** False until the stored list has been read; levels aren't trustworthy before then. */
+  get isLoaded(): boolean {
+    return this.loaded;
+  }
+
+  /** Sets several words at once (one save). */
+  async setMany(words: readonly string[], level: Level): Promise<void> {
+    await this.load();
+    markWords(this.file, words, level);
+    if (words.length) await this.save();
   }
 
   get(word: string): [Level, string] | undefined {
@@ -112,9 +150,7 @@ export class KnownWords {
   /** Sets a word's level (adding it if missing) and stamps today's date. */
   async set(word: string, level: Level): Promise<void> {
     await this.load();
-    const date = today();
-    this.file.words[word] = [level, date];
-    this.file.updated = date;
+    markWords(this.file, [word], level);
     await this.save();
   }
 

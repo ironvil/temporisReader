@@ -775,3 +775,21 @@ select:focus {
   border-color: var(--accent);
   color: var(--accent-fg);
 }
+
+.word-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 8px 0 4px;
+}
+.word-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-size: 1.125rem;
+}
+.word-chips:focus {
+  outline: none;
+}
