@@ -1,6 +1,6 @@
 {
   "name": "temporis-reader",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Capacitor hello world with file reading",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,8 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.0",
     "@capacitor/file-transfer": "^2.0.6",
-    "@capacitor/filesystem": "^8.1.5"
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

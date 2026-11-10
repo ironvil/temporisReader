@@ -400,7 +400,7 @@ progress {
   right: calc(var(--safe-right) + 8px);
   z-index: 5;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   background: var(--bg);
   border: 1.5px solid var(--muted);
   border-radius: 10px;
@@ -742,4 +742,36 @@ select:focus {
 }
 .split-preview:empty {
   display: none;
+}
+
+.lookup-main {
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+.lookup-footer {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+}
+.word-status {
+  display: flex;
+  gap: 8px;
+}
+.status-btn {
+  width: 44px;
+  height: 36px;
+  border: 1.5px solid var(--muted);
+  border-radius: 6px;
+  background: transparent;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.status-btn.known {
+  font-size: 1.125rem;
+}
+.status-btn[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
 }

@@ -1,6 +1,8 @@
 import { languages } from '../languages';
 import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
+import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
+import { knownWords, today } from '../vocab/known-words';
 import { el, formatBytes, toast } from './dom';
 import { iconButton } from './icons';
 
@@ -167,6 +169,34 @@ export class SettingsView {
       ),
       bar,
       dictionaryRows,
+      await this.knownWordsRow(lang),
+    );
+  }
+
+  private async knownWordsRow(lang: LanguageModule): Promise<HTMLElement> {
+    const store = knownWords(lang.id);
+    await store.load();
+    const counts = store.counts();
+    const exportButton = el('button', { type: 'button', class: 'button secondary' }, 'Export known words');
+    exportButton.addEventListener('click', async () => {
+      try {
+        await exportTextFile(`known-words-${lang.id}-${today()}.json`, store.export());
+      } catch (err) {
+        // Dismissing the share sheet rejects too; only report real failures.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/cancel/i.test(message)) toast(`Export failed: ${message}`);
+      }
+    });
+    return el(
+      'div',
+      { class: 'dict-row', 'data-known-words': lang.id },
+      el('div', {}, el('strong', {}, 'Known words')),
+      el(
+        'div',
+        { class: 'muted known-summary' },
+        store.size ? `${store.size.toLocaleString()} words · ${counts[3].toLocaleString()} known` : 'None marked yet',
+      ),
+      el('div', { class: 'actions' }, exportButton),
     );
   }
 

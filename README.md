@@ -10,6 +10,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Languages are added in Settings → Languages, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT.
 - Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.
 - Markdown bold and italics are rendered.
+- Known words per language: the lookup popup has 0 / 1 / 2 / ✓ buttons (✓ = 3, known); each tap records the level and today's date. Settings → Languages exports the list as `known-words-<lang>-<date>.json` (`{version, updated, words: {word: [level, date]}}`) via the Android share sheet.
 
 ## Layout
 
@@ -23,6 +24,7 @@ src/
   languages/index.ts    language registry
   languages/zh/         Chinese: CC-CEDICT download/parse, pinyin, popup rendering
   segmentation/         WordSegmenter interface; dictionary-based and Intl (ICU) implementations
+  vocab/known-words.ts  known-word levels per language, file format
   ui/                   library, book editor and settings screens
 ```
 

@@ -8,13 +8,21 @@ export class LookupPopup {
   readonly el: HTMLElement;
   private readonly body: HTMLElement;
   private readonly badge: HTMLElement;
+  private readonly footer: HTMLElement;
   private readonly arrow: HTMLElement;
 
   constructor(private readonly container: HTMLElement) {
     this.arrow = el('div', { class: 'lookup-arrow' });
     this.body = el('div', { class: 'lookup-body' });
     this.badge = el('div', { class: 'lookup-badge' });
-    this.el = el('div', { class: 'lookup-popup', role: 'dialog', 'aria-label': 'Dictionary', hidden: true }, this.arrow, this.body, this.badge);
+    this.footer = el('div', { class: 'lookup-footer' });
+    this.el = el(
+      'div',
+      { class: 'lookup-popup', role: 'dialog', 'aria-label': 'Dictionary', hidden: true },
+      this.arrow,
+      el('div', { class: 'lookup-main' }, this.body, this.badge),
+      this.footer,
+    );
     container.append(this.el);
   }
 
@@ -22,8 +30,11 @@ export class LookupPopup {
     return !this.el.hidden;
   }
 
-  show(content: Node, anchor: DOMRect, badge?: string): void {
+  /** `footer` stays visible below the scrolling entries (e.g. word status buttons). */
+  show(content: Node, anchor: DOMRect, badge?: string, footer?: Node): void {
     this.body.replaceChildren(content);
+    this.footer.replaceChildren(...(footer ? [footer] : []));
+    this.footer.hidden = !footer;
     this.badge.textContent = badge ?? '';
     this.badge.hidden = !badge;
     this.el.hidden = false;
@@ -34,6 +45,7 @@ export class LookupPopup {
   hide(): void {
     this.el.hidden = true;
     this.body.replaceChildren();
+    this.footer.replaceChildren();
   }
 
   private position(anchor: DOMRect): void {

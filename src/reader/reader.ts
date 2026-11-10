@@ -13,6 +13,7 @@ import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentatio
 import { onSettingsChange } from '../settings';
 import { el } from '../ui/dom';
 import { iconButton } from '../ui/icons';
+import { knownWords, LEVELS, type Level } from '../vocab/known-words';
 import { LookupPopup } from './popup';
 
 const MARGIN_X = 20;
@@ -157,6 +158,7 @@ export class Reader {
     this.book = book;
     this.lang = getLanguage(book.meta.language);
     for (const dictionary of this.lang?.dictionaries ?? []) void dictionary.ensureLoaded();
+    if (this.lang) void knownWords(this.lang.id).load();
     this.bookTitle.textContent = book.meta.title;
 
     const saved = book.meta.progress;
@@ -493,8 +495,42 @@ export class Reader {
     if (!range) return this.closeLookup();
     this.highlight(range);
     const anchor = range.getClientRects()[0] ?? range.getBoundingClientRect();
-    const content = result.entries.length ? lang.renderEntries(result) : this.renderNotice(result);
-    this.popup.show(content, anchor, result.entries.length ? result.source : undefined);
+    if (!result.entries.length) return this.popup.show(this.renderNotice(result), anchor);
+    const status = await this.statusButtons(lang.id, result.headword);
+    if (seq !== this.lookupSeq) return;
+    this.popup.show(lang.renderEntries(result), anchor, result.source, status);
+  }
+
+  /** 0 / 1 / 2 / ✓ buttons; the word's current level is highlighted. Tapping sets it and stamps today. */
+  private async statusButtons(language: string, word: string): Promise<HTMLElement> {
+    const store = knownWords(language);
+    await store.load();
+    const row = el('div', { class: 'word-status', role: 'group', 'aria-label': `Status of ${word}` });
+    const render = () => {
+      const current = store.level(word);
+      row.replaceChildren(
+        ...LEVELS.map((level: Level) => {
+          const known = level === 3;
+          const button = el(
+            'button',
+            {
+              type: 'button',
+              class: `status-btn${known ? ' known' : ''}`,
+              'aria-label': known ? 'Known' : `Level ${level}`,
+              'aria-pressed': String(current === level),
+            },
+            known ? '✓' : String(level),
+          );
+          button.addEventListener('click', async () => {
+            await store.set(word, level);
+            render();
+          });
+          return button;
+        }),
+      );
+    };
+    render();
+    return row;
   }
 
   private renderNotice(result: LookupResult): HTMLElement {
