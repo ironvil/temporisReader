@@ -297,3 +297,36 @@ test.describe('looked-up words reset after a jump', () => {
     await expect(prompt(page).locator('.word-chip', { hasText: /^今天$/ })).toHaveCount(1);
   });
 });
+
+test('the footer looks like a control: a chevron that flips while the scrubber is open', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+  await importBook(page, 'book.txt', chineseBookForIndicator());
+  await openFirstBook(page);
+  const chevron = page.locator('.page-indicator .indicator-pill svg');
+  await expect(chevron).toBeVisible();
+  const rotation = () => chevron.evaluate((e) => getComputedStyle(e).transform);
+  expect(await rotation()).toBe('none');
+  await page.locator('.page-indicator').click();
+  await expect(page.locator('.page-indicator')).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(rotation).not.toBe('none');
+});
+
+function chineseBookForIndicator(): string {
+  return ['第一章', ...Array.from({ length: 30 }, () => '今天早上，阳光很好。')].join('\n');
+}
+
+test('the footer keeps one height whether or not there is a chapter line (no re-pagination)', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+  const footerHeight = () => page.locator('.bar.bottom').evaluate((e) => e.getBoundingClientRect().height);
+  await importBook(page, 'one.txt', '只有一章。\n今天早上，阳光很好。');
+  await openFirstBook(page);
+  await expect(page.locator('.chapter-count')).toBeEmpty();
+  const single = await footerHeight();
+  await page.getByRole('button', { name: 'Library' }).click();
+  await importBook(page, 'two.txt', chineseBookForIndicator() + '\n第二章\n今天。');
+  await page.locator('.book-open', { hasText: 'two' }).click();
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
+  expect(await footerHeight()).toBe(single);
+});

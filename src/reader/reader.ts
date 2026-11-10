@@ -12,7 +12,7 @@ import { IntlWordSegmenter } from '../segmentation/intl';
 import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentation/types';
 import { getSettings, onSettingsChange } from '../settings';
 import { el } from '../ui/dom';
-import { iconButton } from '../ui/icons';
+import { icon, iconButton } from '../ui/icons';
 import { KNOWN, knownWords, wordsToMarkKnown } from '../vocab/known-words';
 import { openChapterList } from './chapter-list';
 import { blockOffset, charRange, clearHighlight, highlightsSupported, renderInline, setHighlight } from './dom-text';
@@ -101,8 +101,8 @@ export class Reader {
     const indicator = el(
       'button',
       { type: 'button', class: 'page-indicator', 'aria-expanded': 'false', 'aria-label': 'Book position' },
-      this.pageCountEl,
-      this.chapterCountEl,
+      // A pill with a chevron, so it reads as a control that opens the book scrubber.
+      el('span', { class: 'indicator-pill' }, el('span', { class: 'indicator-text' }, this.pageCountEl, this.chapterCountEl), icon('up')),
     );
     indicator.addEventListener('click', () => this.scrubber.toggle());
     this.scrubber = new BookScrubber(
