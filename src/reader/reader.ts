@@ -5,7 +5,6 @@
  * paragraph's plain text (its textContent).
  */
 import { saveProgress, type OpenBook, type Progress } from '../books/library';
-import type { InlineMark } from '../books/parse';
 import { getLanguage } from '../languages';
 import type { LanguageModule, LookupResult } from '../languages/types';
 import { IntlWordSegmenter } from '../segmentation/intl';
@@ -13,22 +12,21 @@ import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentatio
 import { getSettings, onSettingsChange } from '../settings';
 import { el } from '../ui/dom';
 import { iconButton } from '../ui/icons';
-import { openDialog } from '../ui/dialog';
-import { toast } from '../ui/dom';
-import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
-import { KNOWN, knownWords, LEVELS, wordsToMarkKnown, type Level } from '../vocab/known-words';
+import { KNOWN, knownWords, wordsToMarkKnown } from '../vocab/known-words';
+import { openChapterList } from './chapter-list';
+import { blockOffset, charRange, clearHighlight, highlightsSupported, renderInline, setHighlight } from './dom-text';
+import { remindAboutLanguage } from './language-reminder';
+import { MIN_PAGE_DWELL_MS, offerMarkKnown } from './mark-known';
 import { LookupPopup } from './popup';
-import { chapterStartOffsets, estimatePage, globalOffset, guessCharsPerPage, locateOffset, type Located } from './scrub';
+import { globalOffset, guessCharsPerPage, type Located } from './scrub';
+import { BookScrubber } from './scrubber';
+import { statusButtons, updateLevelOnLookup } from './word-status';
 
 const MARGIN_X = 20;
 const MARGIN_Y = 16;
 const TAP_SLOP = 10;
 const SWIPE_THRESHOLD = 50;
 const SAVE_DELAY = 400;
-/** Pages read for less than this are skipped by the "mark unlooked-up words as known" prompt. */
-export const MIN_PAGE_DWELL_MS = 10_000;
-/** The scrubber jumps once the thumb has been still this long (pagination only happens then). */
-export const SCRUB_SETTLE_MS = 1_000;
 
 /** A place in the current chapter. */
 interface Position {
@@ -49,55 +47,11 @@ interface CaretDocument {
   caretRangeFromPoint?: (x: number, y: number) => Range | null;
 }
 
-interface HighlightRegistry {
-  set(name: string, value: unknown): void;
-  delete(name: string): void;
-}
-
-/** Paragraph plain text + bold/italic ranges → DOM nodes. */
-export function renderInline(text: string, marks: InlineMark[]): Node[] {
-  if (!marks.length) return [document.createTextNode(text)];
-  const cuts = [...new Set([0, text.length, ...marks.flatMap(([a, b]) => [a, b])])].sort((a, b) => a - b);
-  const nodes: Node[] = [];
-  for (let k = 0; k < cuts.length - 1; k++) {
-    const [a, b] = [cuts[k], cuts[k + 1]];
-    let node: Node = document.createTextNode(text.slice(a, b));
-    const active = new Set(marks.filter(([s, e]) => s <= a && e >= b).map(([, , kind]) => kind));
-    if (active.has('i')) node = el('em', {}, node);
-    if (active.has('b')) node = el('strong', {}, node);
-    nodes.push(node);
-  }
-  return nodes;
-}
-
-/** Text node and local offset for a paragraph-level offset. */
-function domPosition(block: HTMLElement, offset: number): { node: Text; offset: number } | null {
-  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-  let last: Text | null = null;
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    if (offset < node.length) return { node, offset };
-    offset -= node.length;
-    last = node;
-  }
-  return last ? { node: last, offset: last.length } : null;
-}
-
-/** Paragraph-level offset for a position inside one of the block's text nodes. */
-function blockOffset(block: HTMLElement, target: Text, offset: number): number {
-  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-  let total = 0;
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    if (node === target) return total + offset;
-    total += node.length;
-  }
-  return total;
-}
-
 const fallbackSegmenter = new IntlWordSegmenter();
 
 export interface ReaderCallbacks {
   onExit(): void;
-  /** `language`: scroll Settings to that language's card. */
+  /** `language`: open that language's page in Settings. */
   onOpenSettings(language?: string): void;
   onEditBook(id: string): void;
 }
@@ -129,18 +83,9 @@ export class Reader {
   private gesture: Gesture | null = null;
   private layoutSize = '';
   private relayoutTimer: number | undefined;
-  private readonly indicator: HTMLButtonElement;
-  private readonly scrubber: HTMLElement;
-  private readonly scrubInput: HTMLInputElement;
-  private readonly scrubLabel: HTMLElement;
-  private readonly scrubDetail: HTMLElement;
-  private readonly scrubTicks: HTMLElement;
-  private ticksForBook: OpenBook | null = null;
-  private chapterStarts: number[] = [];
+  private readonly scrubber: BookScrubber;
   /** Cached per layout (chapter + page size + text size). */
   private cachedCharsPerPage: number | null = null;
-  private pendingScrub: Located | null = null;
-  private scrubTimer: number | undefined;
   private unsubscribeKnown: (() => void) | null = null;
 
   constructor(private readonly callbacks: ReaderCallbacks) {
@@ -152,27 +97,22 @@ export class Reader {
     this.popup = new LookupPopup(pageWrap);
     this.pageCountEl = el('span', { class: 'page-count' });
     this.chapterCountEl = el('span', { class: 'chapter-count' });
-    this.indicator = el(
+    const indicator = el(
       'button',
       { type: 'button', class: 'page-indicator', 'aria-expanded': 'false', 'aria-label': 'Book position' },
       this.pageCountEl,
       this.chapterCountEl,
     );
-    this.indicator.addEventListener('click', () => this.toggleScrubber());
-    const indicator = this.indicator;
-
-    this.scrubLabel = el('div', { class: 'scrub-label' });
-    this.scrubDetail = el('div', { class: 'scrub-detail' });
-    this.scrubTicks = el('div', { class: 'scrub-ticks', 'aria-hidden': 'true' });
-    this.scrubInput = el('input', { type: 'range', min: '0', step: '1', class: 'scrub-range', 'aria-label': 'Position in book' });
-    this.scrubInput.addEventListener('input', () => this.onScrub());
-    this.scrubber = el(
-      'div',
-      { class: 'scrubber', hidden: true, role: 'group', 'aria-label': 'Book position' },
-      el('div', { class: 'scrub-text', 'aria-live': 'polite' }, this.scrubLabel, this.scrubDetail),
-      el('div', { class: 'scrub-track' }, this.scrubTicks, this.scrubInput),
+    indicator.addEventListener('click', () => this.scrubber.toggle());
+    this.scrubber = new BookScrubber(
+      {
+        state: () => ({ book: this.book, chapterIndex: this.chapterIndex, page: this.page, pageCount: this.pageCount, position: this.position }),
+        charsPerPage: () => this.charsPerPage(),
+        jumpTo: (target) => this.jumpTo(target),
+      },
+      indicator,
     );
-    pageWrap.append(this.scrubber);
+    pageWrap.append(this.scrubber.el);
 
     this.root = el(
       'section',
@@ -182,7 +122,9 @@ export class Reader {
         { class: 'bar top' },
         iconButton('back', 'Library', () => callbacks.onExit()),
         el('div', { class: 'bar-title' }, this.bookTitle, this.chapterTitle),
-        iconButton('list', 'Chapters', () => this.openChapterList()),
+        iconButton('list', 'Chapters', () => {
+          if (this.book) openChapterList(this.book, this.lang, this.chapterIndex, (i) => this.jumpToChapter(i));
+        }),
         iconButton('settings', 'Settings', () => callbacks.onOpenSettings()),
       ),
       pageWrap,
@@ -198,7 +140,7 @@ export class Reader {
     document.addEventListener('keydown', (e) => {
       if (this.root.hidden || !this.book || document.querySelector('dialog[open]')) return;
       if (e.key === 'Escape') {
-        if (!this.scrubber.hidden) this.toggleScrubber(false);
+        if (this.scrubber.isOpen) this.scrubber.toggle(false);
         else this.closeLookup();
         return;
       }
@@ -226,48 +168,17 @@ export class Reader {
     if (saved && saved.chapter === chapter) this.goTo(this.positionFromProgress(saved));
     else this.setPage(0);
     this.startPageVisit();
-    void this.remindAboutLanguage(book);
+    void this.checkLanguage(book);
   }
 
-  /**
-   * Every time a book opens: if its language's dictionaries aren't installed, remind the user to
-   * add the language; if its language isn't supported (or wasn't detected), say lookups aren't
-   * available and offer to change the language.
-   */
-  private async remindAboutLanguage(book: OpenBook): Promise<void> {
+  /** Reminds about a missing or unsupported language; data-language-check lets tests wait for it. */
+  private async checkLanguage(book: OpenBook): Promise<void> {
     this.root.dataset.languageCheck = 'pending';
     try {
-      const lang = this.lang;
-      if (!lang) {
-        openDialog({
-          title: 'Lookups aren’t available',
-          content: [
-            el(
-              'p',
-              {},
-              'This book’s language isn’t supported or couldn’t be detected, so words can’t be looked up. If it is in a supported language, set it in the book editor.',
-            ),
-          ],
-          cancelLabel: 'Not now',
-          confirmLabel: 'Change language',
-          onConfirm: () => this.callbacks.onEditBook(book.meta.id),
-        });
-        return;
-      }
-      const states = await Promise.all(lang.dictionaries.map((d) => d.state()));
-      if (states.every((s) => s.installed) || this.book !== book) return;
-      openDialog({
-        title: `Add ${lang.name}?`,
-        content: [
-          el(
-            'p',
-            {},
-            `This book is in ${lang.name}, but ${lang.name} hasn’t been added yet. Word lookup, highlighting and known-word stats need its dictionary. Add it in Settings → Languages.`,
-          ),
-        ],
-        cancelLabel: 'Not now',
-        confirmLabel: 'Open settings',
-        onConfirm: () => this.callbacks.onOpenSettings(lang.id),
+      await remindAboutLanguage(book, this.lang, {
+        onEditBook: (id) => this.callbacks.onEditBook(id),
+        onOpenSettings: (language) => this.callbacks.onOpenSettings(language),
+        stillOpen: () => this.book === book,
       });
     } finally {
       this.root.dataset.languageCheck = 'done';
@@ -279,10 +190,7 @@ export class Reader {
     this.unsubscribeKnown?.();
     this.unsubscribeKnown = null;
     this.clearWordHighlights();
-    this.cancelScrub();
-    this.scrubber.hidden = true;
-    this.indicator.setAttribute('aria-expanded', 'false');
-    this.ticksForBook = null;
+    this.scrubber.reset();
     const saved = this.flush();
     this.closeLookup();
     this.book = null;
@@ -293,8 +201,8 @@ export class Reader {
 
   /** Handles the Android back button. Returns true if it was consumed. */
   handleBack(): boolean {
-    if (!this.scrubber.hidden) {
-      this.toggleScrubber(false);
+    if (this.scrubber.isOpen) {
+      this.scrubber.toggle(false);
       return true;
     }
     if (this.popup.isOpen) {
@@ -316,7 +224,7 @@ export class Reader {
 
   next(): void {
     if (!this.book) return;
-    this.cancelScrub();
+    this.scrubber.cancel();
     const atEnd = this.page === this.pageCount - 1 && this.chapterIndex === this.book.index.chapters.length - 1;
     if (atEnd) return this.applyTransform(true);
     // Collect before the page changes (the next chapter replaces the DOM).
@@ -327,12 +235,12 @@ export class Reader {
       this.setPage(0);
     }
     this.startPageVisit();
-    if (unlooked) this.offerMarkKnown(unlooked.language, unlooked.words);
+    if (unlooked) offerMarkKnown(unlooked.language, unlooked.words, this.lang?.htmlLang);
   }
 
   prev(): void {
     if (!this.book) return;
-    this.cancelScrub();
+    this.scrubber.cancel();
     if (this.page > 0) this.setPage(this.page - 1, true);
     else if (this.chapterIndex > 0) {
       this.renderChapter(this.chapterIndex - 1);
@@ -341,83 +249,21 @@ export class Reader {
     this.startPageVisit();
   }
 
-  // ── Book scrubber ────────────────────────────────────────────────────────
+  // ── Jumps (scrubber, chapter list) ───────────────────────────────────────
 
-  private toggleScrubber(open = this.scrubber.hidden): void {
-    if (!this.book) return;
-    if (!open) {
-      this.commitScrub(); // a pending jump still happens when the scrubber is closed
-      this.scrubber.hidden = true;
-      this.indicator.setAttribute('aria-expanded', 'false');
-      return;
-    }
-    if (this.ticksForBook !== this.book) this.renderScrubber(this.book);
-    this.scrubber.hidden = false;
-    this.indicator.setAttribute('aria-expanded', 'true');
-    this.syncScrubber();
-  }
-
-  /** Slider range and chapter-break ticks; once per opened book. */
-  private renderScrubber(book: OpenBook): void {
-    const length = Math.max(1, book.content.length);
-    this.scrubInput.max = String(length);
-    this.chapterStarts = chapterStartOffsets(book.index);
-    this.scrubTicks.replaceChildren(
-      ...this.chapterStarts
-        .slice(1)
-        .map((offset) => el('span', { class: 'scrub-tick', style: `left: ${((offset / length) * 100).toFixed(3)}%` })),
-    );
-    this.ticksForBook = book;
-  }
-
-  /** Shows the current (exact) position, unless a jump is pending. */
-  private syncScrubber(): void {
-    const book = this.book;
-    if (!book || this.scrubber.hidden || this.pendingScrub) return;
-    const { paragraph, char } = this.position;
-    const offset = globalOffset(book.index, this.chapterIndex, paragraph, char);
-    this.scrubInput.value = String(offset);
-    this.setScrubText(this.chapterIndex, `Page ${this.page + 1} of ${this.pageCount}`, offset);
-  }
-
-  private setScrubText(chapter: number, pageText: string, offset: number): void {
-    const book = this.book!;
-    const chapters = book.index.chapters;
-    const percent = Math.round((offset / Math.max(1, book.content.length)) * 100);
-    this.scrubLabel.textContent = chapters.length > 1 ? `Chapter ${chapter + 1} of ${chapters.length} · ${chapters[chapter].title}` : chapters[chapter].title;
-    this.scrubDetail.textContent = `${pageText} · ${percent}%`;
-  }
-
-  /** While dragging: only estimate. The jump (and pagination) waits until the thumb settles. */
-  private onScrub(): void {
-    const book = this.book;
-    if (!book) return;
-    const offset = Number(this.scrubInput.value);
-    const target = locateOffset(book.index, book.content.length, offset);
-    const starts = this.chapterStarts;
-    const chapterEnd = starts[target.chapter + 1] ?? book.content.length;
-    const { page, pages } = estimatePage(offset - starts[target.chapter], chapterEnd - starts[target.chapter], this.charsPerPage());
-    this.setScrubText(target.chapter, `Page ≈${page} of ≈${pages}`, offset);
-
-    this.pendingScrub = target;
-    clearTimeout(this.scrubTimer);
-    this.scrubTimer = window.setTimeout(() => this.commitScrub(), SCRUB_SETTLE_MS);
-  }
-
-  private commitScrub(): void {
-    clearTimeout(this.scrubTimer);
-    const target = this.pendingScrub;
-    this.pendingScrub = null;
-    if (!target || !this.book) return;
+  /** A jump is not a page turn: no mark-known prompt, and a fresh page visit. */
+  private jumpTo(target: Located): void {
     if (target.chapter !== this.chapterIndex) this.renderChapter(target.chapter);
     this.goTo({ paragraph: target.paragraph, char: target.char });
-    this.startPageVisit(); // a jump is not a page turn: no mark-known prompt, fresh timer
-    this.syncScrubber();
+    this.startPageVisit();
   }
 
-  private cancelScrub(): void {
-    clearTimeout(this.scrubTimer);
-    this.pendingScrub = null;
+  private jumpToChapter(index: number): void {
+    if (!this.book) return;
+    this.scrubber.cancel();
+    this.renderChapter(index);
+    this.setPage(0);
+    this.startPageVisit();
   }
 
   /** Characters per page: measured from the current chapter when it spans pages, else guessed from the page size. */
@@ -482,51 +328,13 @@ export class Reader {
     return words;
   }
 
-  /** Lists the words as toggles (all selected); only selected words are marked. */
-  private offerMarkKnown(language: string, words: string[]): void {
-    const n = words.length;
-    const selected = new Set(words);
-    const chips = words.map((w) => {
-      const chip = el('button', { type: 'button', class: 'word-chip', 'aria-pressed': 'true' }, w);
-      chip.addEventListener('click', () => {
-        if (selected.has(w)) selected.delete(w);
-        else selected.add(w);
-        chip.setAttribute('aria-pressed', String(selected.has(w)));
-        updateConfirm();
-      });
-      return chip;
-    });
-    const dialog = openDialog({
-      title: 'Mark words as known?',
-      content: [
-        el('p', {}, `${n} ${n === 1 ? 'word' : 'words'} on the page you just read ${n === 1 ? 'wasn’t' : 'weren’t'} looked up. Tap a word to leave it out.`),
-        el('div', { class: 'word-chips', lang: this.lang?.htmlLang }, ...chips),
-      ],
-      cancelLabel: 'Not now',
-      confirmLabel: `Mark ${n} known`,
-      onConfirm: async () => {
-        const chosen = words.filter((w) => selected.has(w));
-        if (!chosen.length) return;
-        await knownWords(language).setMany(chosen, KNOWN);
-        toast(`Marked ${chosen.length} ${chosen.length === 1 ? 'word' : 'words'} as known`);
-      },
-    });
-    const confirm = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    const updateConfirm = () => {
-      confirm.textContent = `Mark ${selected.size} known`;
-      confirm.disabled = selected.size === 0;
-    };
-  }
-
   // ── Highlighting words that aren't known yet ──────────────────────────────
 
   /** Tints new (untracked) and learning (0–2) words on the current page, when enabled in settings. */
   private refreshWordHighlights(): void {
     this.clearWordHighlights();
-    const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
-    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
     const lang = this.lang;
-    if (!registry || !HighlightCtor || !lang || !this.book || this.root.hidden || !getSettings().highlightWords) return;
+    if (!highlightsSupported() || !lang || !this.book || this.root.hidden || !getSettings().highlightWords) return;
     const store = knownWords(lang.id);
     if (!lang.ready() || !store.isLoaded) return;
 
@@ -537,73 +345,18 @@ export class Reader {
       if (key === null) continue;
       const level = store.level(key);
       if (level === KNOWN) continue;
-      const range = this.charRange(word.block, word.start, word.end);
+      const range = charRange(word.block, word.start, word.end);
       if (range) (level === undefined ? fresh : learning).push(range);
     }
-    registry.set('word-new', new HighlightCtor(...fresh));
-    registry.set('word-learning', new HighlightCtor(...learning));
+    setHighlight('word-new', fresh);
+    setHighlight('word-learning', learning);
   }
 
   private clearWordHighlights(): void {
-    const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
-    registry?.delete('word-new');
-    registry?.delete('word-learning');
+    clearHighlight('word-new', 'word-learning');
   }
 
-  // ── Chapter list ─────────────────────────────────────────────────────────
-
-  private openChapterList(): void {
-    const book = this.book;
-    if (!book) return;
-    const dialog = el('dialog', { class: 'dialog toc', 'aria-label': 'Chapters' });
-    const items = book.index.chapters.map((chapter, i) => {
-      const button = el(
-        'button',
-        { type: 'button', class: 'toc-item', 'aria-current': i === this.chapterIndex ? 'true' : undefined },
-        el('span', { class: 'toc-number' }, String(i + 1)),
-        el('span', { class: 'toc-title' }, chapter.title),
-        el('span', { class: 'toc-known', 'data-chapter': String(i) }),
-      );
-      button.addEventListener('click', () => {
-        dialog.close();
-        this.jumpToChapter(i);
-      });
-      return el('li', {}, button);
-    });
-    const close = iconButton('close', 'Close chapters', () => dialog.close());
-    dialog.append(
-      el('div', { class: 'toc-head' }, el('div', {}, el('h2', {}, 'Chapters'), el('div', { class: 'toc-book-known' })), close),
-      el('ol', { class: 'toc-list' }, ...items),
-    );
-    dialog.addEventListener('close', () => dialog.remove());
-    document.body.append(dialog);
-    dialog.showModal();
-    items[this.chapterIndex]?.scrollIntoView({ block: 'center' });
-    void this.fillChapterShares(book, dialog);
-  }
-
-  private async fillChapterShares(book: OpenBook, dialog: HTMLElement): Promise<void> {
-    const lang = this.lang;
-    if (!lang) return;
-    const store = knownWords(lang.id);
-    await store.load();
-    const counts = await bookWordCounts(book.meta.id, lang, book);
-    if (!counts) return;
-    const whole = dialog.querySelector('.toc-book-known');
-    if (whole) whole.textContent = `Whole book: ${formatShare(knownShare(counts, (w) => store.level(w)))} of words known`;
-    counts.forEach((chapter, i) => {
-      const target = dialog.querySelector(`.toc-known[data-chapter="${i}"]`);
-      if (target) target.textContent = `${formatShare(knownShare([chapter], (w) => store.level(w)))} known`;
-    });
-  }
-
-  private jumpToChapter(index: number): void {
-    if (!this.book) return;
-    this.cancelScrub();
-    this.renderChapter(index);
-    this.setPage(0);
-    this.startPageVisit(); // not a page turn: no mark-known prompt
-  }
+  // ── Pages ────────────────────────────────────────────────────────────────
 
   private setPage(page: number, animate = false, keep?: Position): void {
     this.page = Math.max(0, Math.min(page, this.pageCount - 1));
@@ -611,7 +364,7 @@ export class Reader {
     this.closeLookup();
     this.position = keep ?? this.firstPositionOnPage(this.page);
     this.updateChrome();
-    this.syncScrubber();
+    this.scrubber.sync();
     this.refreshWordHighlights();
     this.scheduleSave();
   }
@@ -700,20 +453,6 @@ export class Reader {
     return Math.max(0, Math.floor((x - flowLeft + MARGIN_X) / this.stride));
   }
 
-  private charRange(block: HTMLElement, offset: number, end = offset + 1): Range | null {
-    const text = block.textContent ?? '';
-    if (offset < 0 || offset >= text.length) return null;
-    // Don't split surrogate pairs.
-    if (end - offset === 1 && /[\uD800-\uDBFF]/.test(text[offset]) && end < text.length) end++;
-    const from = domPosition(block, offset);
-    const to = domPosition(block, Math.min(end, text.length));
-    if (!from || !to) return null;
-    const range = document.createRange();
-    range.setStart(from.node, from.offset);
-    range.setEnd(to.node, to.offset);
-    return range;
-  }
-
   private get segmenter(): WordSegmenter {
     return this.lang?.segmenter ?? fallbackSegmenter;
   }
@@ -721,7 +460,7 @@ export class Reader {
   private pageOfOffset(block: HTMLElement, offset: number): number {
     const length = block.textContent?.length ?? 0;
     for (let o = Math.max(0, Math.min(offset, length - 1)); o < length; o++) {
-      const rect = this.charRange(block, o)?.getClientRects()[0];
+      const rect = charRange(block, o)?.getClientRects()[0];
       if (rect) return this.pageOfX(rect.left);
     }
     const rect = block.getClientRects()[0];
@@ -866,7 +605,7 @@ export class Reader {
     // The caret may sit before or after the tapped character; pick the one under the finger.
     for (const o of [at, at - 1]) {
       if (o < 0) continue;
-      const r = this.charRange(block, o)?.getBoundingClientRect();
+      const r = charRange(block, o)?.getBoundingClientRect();
       if (r && x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 4 && y <= r.bottom + 4) return { block: index, offset: o };
     }
     return null;
@@ -882,7 +621,7 @@ export class Reader {
     const seq = ++this.lookupSeq;
 
     if (!lang.ready()) {
-      const anchor = this.charRange(block, hit.offset)?.getBoundingClientRect();
+      const anchor = charRange(block, hit.offset)?.getBoundingClientRect();
       if (anchor) this.popup.show(el('p', { class: 'lookup-notice' }, 'Loading dictionary…'), anchor);
     }
 
@@ -897,62 +636,16 @@ export class Reader {
     if (!result) return this.closeLookup();
     this.pageLookups.add(result.headword);
 
-    const range = this.charRange(block, result.start, result.end);
+    const range = charRange(block, result.start, result.end);
     if (!range) return this.closeLookup();
-    this.highlight(range);
+    setHighlight('lookup', [range], 1); // above the new/learning tints
     const anchor = range.getClientRects()[0] ?? range.getBoundingClientRect();
     if (!result.entries.length) return this.popup.show(this.renderNotice(result), anchor);
-    await this.updateLevelOnLookup(lang.id, result.headword);
+    await updateLevelOnLookup(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
-    const status = await this.statusButtons(lang.id, result.headword);
+    const status = await statusButtons(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
     this.popup.show(lang.renderEntries(result), anchor, result.source, status);
-  }
-
-  /**
-   * Looking a word up says something about it (each part has its own setting, both dated today):
-   * a known word isn't really known, so it goes back to 2; a word not in the list yet starts at 1.
-   */
-  private async updateLevelOnLookup(language: string, word: string): Promise<void> {
-    const { downgradeOnLookup, trackOnLookup } = getSettings();
-    if (!downgradeOnLookup && !trackOnLookup) return;
-    const store = knownWords(language);
-    await store.load();
-    const level = store.level(word);
-    if (level === KNOWN && downgradeOnLookup) await store.set(word, 2);
-    else if (level === undefined && trackOnLookup) await store.set(word, 1);
-  }
-
-  /** 0 / 1 / 2 / ✓ buttons; the word's current level is highlighted. Tapping sets it and stamps today. */
-  private async statusButtons(language: string, word: string): Promise<HTMLElement> {
-    const store = knownWords(language);
-    await store.load();
-    const row = el('div', { class: 'word-status', role: 'group', 'aria-label': `Status of ${word}` });
-    const render = () => {
-      const current = store.level(word);
-      row.replaceChildren(
-        ...LEVELS.map((level: Level) => {
-          const known = level === 3;
-          const button = el(
-            'button',
-            {
-              type: 'button',
-              class: `status-btn${known ? ' known' : ''}`,
-              'aria-label': known ? 'Known' : `Level ${level}`,
-              'aria-pressed': String(current === level),
-            },
-            known ? '✓' : String(level),
-          );
-          button.addEventListener('click', async () => {
-            await store.set(word, level);
-            render();
-          });
-          return button;
-        }),
-      );
-    };
-    render();
-    return row;
   }
 
   private renderNotice(result: LookupResult): HTMLElement {
@@ -968,18 +661,9 @@ export class Reader {
     );
   }
 
-  private highlight(range: Range): void {
-    const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
-    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
-    if (!registry || !HighlightCtor) return;
-    const highlight = new HighlightCtor(range) as { priority: number };
-    highlight.priority = 1; // above the new/learning tints
-    registry.set('lookup', highlight);
-  }
-
   private closeLookup(): void {
     this.lookupSeq++;
     this.popup.hide();
-    (CSS as unknown as { highlights?: HighlightRegistry }).highlights?.delete('lookup');
+    clearHighlight('lookup');
   }
 }
