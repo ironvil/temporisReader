@@ -720,3 +720,26 @@ select:focus {
 .empty .actions {
   justify-content: center;
 }
+
+.split-row {
+  margin-top: 16px;
+}
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.checkbox input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+.split-preview {
+  margin: 2px 0 0 30px;
+  font-size: 0.875rem;
+}
+.split-preview:empty {
+  display: none;
+}

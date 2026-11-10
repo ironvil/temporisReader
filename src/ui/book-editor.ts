@@ -1,8 +1,9 @@
 import {
   addChapter,
-  addChapterFromFile,
+  countChapters,
   getBook,
   moveChapter,
+  readFileText,
   removeChapter,
   renameBook,
   renameChapter,
@@ -112,7 +113,7 @@ export class BookEditorView {
   }
 
   private openAddChapter(book: BookMeta): void {
-    let file: File | null = null;
+    let file: { name: string; text: string; format: BookFormat } | null = null;
     const title = el('input', { type: 'text', autocomplete: 'off', placeholder: 'Optional: first heading or file name' });
     const fileInput = el('input', { type: 'file', hidden: true, 'data-testid': 'chapter-file-input' });
     const fileName = el('span', { class: 'muted file-name' }, 'No file chosen');
@@ -126,9 +127,28 @@ export class BookEditorView {
       el('option', { value: 'md' }, 'Markdown'),
     );
     const pasteSection = el('div', { class: 'paste-section' }, el('p', { class: 'muted or' }, 'or paste text'), text, field('Format', format));
+    const split = el('input', { type: 'checkbox' });
+    const preview = el('p', { class: 'muted split-preview', 'aria-live': 'polite' });
+    const splitRow = el(
+      'div',
+      { class: 'split-row' },
+      el('label', { class: 'checkbox' }, split, el('span', {}, 'Split into chapters at headings')),
+      preview,
+    );
+
+    const current = () => (file ? { text: file.text, format: file.format } : { text: text.value, format: format.value as BookFormat });
+    const updatePreview = () => {
+      const { text: body, format: fmt } = current();
+      const n = body.trim() ? countChapters(body, fmt, split.checked) : 0;
+      preview.textContent = n ? `Adds ${n} ${n === 1 ? 'chapter' : 'chapters'}` : '';
+      title.placeholder = split.checked ? 'Optional: part title' : file ? titleFromFileName(file.name) : 'Optional: first heading or file name';
+    };
+    text.addEventListener('input', updatePreview);
+    format.addEventListener('change', updatePreview);
+    split.addEventListener('change', updatePreview);
 
     chooseFile.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => {
+    fileInput.addEventListener('change', async () => {
       const picked = fileInput.files?.[0];
       fileInput.value = '';
       if (!picked) return;
@@ -136,19 +156,20 @@ export class BookEditorView {
         toast('Only .txt and .md files are supported');
         return;
       }
-      file = picked;
+      file = { name: picked.name, ...(await readFileText(picked)) };
       fileName.textContent = picked.name;
-      title.placeholder = titleFromFileName(picked.name);
       clearFile.hidden = false;
       pasteSection.hidden = true;
+      updatePreview();
     });
     clearFile.addEventListener('click', () => {
       file = null;
       fileName.textContent = 'No file chosen';
-      title.placeholder = 'Optional: first heading or file name';
       clearFile.hidden = true;
       pasteSection.hidden = false;
+      updatePreview();
     });
+    updatePreview();
 
     openDialog({
       title: 'Add chapter',
@@ -156,12 +177,13 @@ export class BookEditorView {
         field('Chapter title', title),
         el('div', { class: 'file-row' }, chooseFile, clearFile, fileName, fileInput),
         pasteSection,
+        splitRow,
       ],
       confirmLabel: 'Add',
       onConfirm: async () => {
-        if (file) await addChapterFromFile(book.id, file, title.value);
-        else if (text.value.trim()) await addChapter(book.id, { title: title.value, text: text.value, format: format.value as BookFormat });
-        else throw new Error('Choose a file or paste some text');
+        const { text: body, format: fmt } = current();
+        if (!body.trim()) throw new Error('Choose a file or paste some text');
+        await addChapter(book.id, { title: title.value, text: body, format: fmt, fileName: file?.name ?? null, split: split.checked });
         await this.render();
       },
     });

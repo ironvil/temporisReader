@@ -86,6 +86,8 @@ export interface NewChapter {
   text: string;
   format: BookFormat;
   fileName?: string | null;
+  /** Split into chapters at its headings (a whole book in one file) instead of one chapter. */
+  split?: boolean;
 }
 
 /** Books stored before multi-source support. */
@@ -243,7 +245,7 @@ function remapProgress(progress: Progress | null, { content, index }: { content:
   };
 }
 
-async function readFileText(file: File): Promise<{ text: string; format: BookFormat }> {
+export async function readFileText(file: File): Promise<{ text: string; format: BookFormat }> {
   const format = formatFromFileName(file.name);
   if (!format) throw new Error('Only .txt and .md files are supported');
   return { text: decodeText(new Uint8Array(await file.arrayBuffer())), format };
@@ -305,20 +307,32 @@ export function suggestChapterTitle(text: string, format: BookFormat, fileName?:
   return fileName ? titleFromFileName(fileName) : '';
 }
 
+/** How many chapters `text` would add to a book. */
+export function countChapters(text: string, format: BookFormat, split: boolean): number {
+  const parsed = parseBook(text, format, '');
+  if (!parsed.paragraphs.length) return 0;
+  return split ? parsed.chapters.length : 1;
+}
+
 export function addChapter(bookId: string, chapter: NewChapter): Promise<void> {
   return serial(bookId, async () => {
     const meta = await find(bookId);
-    if (!parseBook(chapter.text, chapter.format, '').paragraphs.length) throw new Error('The chapter has no text');
-    const title = chapter.title.trim() || suggestChapterTitle(chapter.text, chapter.format, chapter.fileName) || `Chapter ${meta.chapterCount + 1}`;
-    const source = await writeSource(bookId, { id: newId(), title, format: chapter.format, fileName: chapter.fileName ?? null, split: false }, chapter.text);
+    const parsed = parseBook(chapter.text, chapter.format, '');
+    if (!parsed.paragraphs.length) throw new Error('The chapter has no text');
+    const split = chapter.split ?? false;
+    const fromFile = chapter.fileName ? titleFromFileName(chapter.fileName) : '';
+    const title =
+      chapter.title.trim() ||
+      (split ? parsed.title || fromFile || `Part ${meta.sources.length + 1}` : suggestChapterTitle(chapter.text, chapter.format, chapter.fileName) || `Chapter ${meta.chapterCount + 1}`);
+    const source = await writeSource(bookId, { id: newId(), title, format: chapter.format, fileName: chapter.fileName ?? null, split }, chapter.text);
     meta.sources.push(source);
     await rebuild(meta);
   });
 }
 
-export async function addChapterFromFile(bookId: string, file: File, title = ''): Promise<void> {
+export async function addChapterFromFile(bookId: string, file: File, title = '', split = false): Promise<void> {
   const { text, format } = await readFileText(file);
-  await addChapter(bookId, { title, text, format, fileName: file.name });
+  await addChapter(bookId, { title, text, format, fileName: file.name, split });
 }
 
 export function removeChapter(bookId: string, sourceId: string): Promise<void> {

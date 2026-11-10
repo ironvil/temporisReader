@@ -230,3 +230,38 @@ test('books stored by older versions are migrated', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit book' }).click();
   await expect(page.locator('.chapter-details')).toHaveText('2 chapters · book.txt');
 });
+
+test('add a whole-book file split into chapters at its headings', async ({ page }) => {
+  await createBook(page, 'Collection');
+  await pasteChapter(page, '序言的内容。', { title: '序言' });
+
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add chapter' });
+  await dialog.getByTestId('chapter-file-input').setInputFiles({ name: 'owl.txt', mimeType: 'text/plain', buffer: Buffer.from(chineseBook()) });
+  await expect(dialog.locator('.split-preview')).toHaveText('Adds 1 chapter');
+  await dialog.getByText('Split into chapters at headings').click();
+  await expect(dialog.locator('.split-preview')).toHaveText('Adds 2 chapters');
+  await dialog.getByRole('button', { name: 'Add' }).click();
+  await expect(dialog).toBeHidden();
+
+  await expectChapters(page, ['序言', 'owl']);
+  await expect(page.locator('.chapter-details').nth(1)).toHaveText('2 chapters · owl.txt');
+
+  await read(page);
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 3');
+  await nextPage(page);
+  await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
+});
+
+test('pasted markdown can be split too', async ({ page }) => {
+  await createBook(page, 'Notes');
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add chapter' });
+  await dialog.getByLabel('Chapter text').fill('# 书名\n\n## 一\n\n甲。\n\n## 二\n\n乙。\n\n## 三\n\n丙。');
+  await dialog.getByLabel('Format').selectOption('md');
+  await dialog.getByText('Split into chapters at headings').click();
+  await expect(dialog.locator('.split-preview')).toHaveText('Adds 3 chapters');
+  await dialog.getByRole('button', { name: 'Add' }).click();
+  await expectChapters(page, ['书名']);
+  await expect(page.locator('.chapter-details')).toHaveText('3 chapters · Pasted text');
+});
