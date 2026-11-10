@@ -54,3 +54,14 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 E2E tests intercept the CC-CEDICT download and serve a small fixture, so they never hit MDBG.
+
+## Release builds
+
+`npm run apk:release` builds `android/app/build/outputs/apk/release/app-release.apk`, signed with the
+release key. The key is **not** in the repo: Gradle reads
+`~/.config/temporis-reader/keystore.properties` (or the file named by `TEMPORIS_KEYSTORE_PROPERTIES`),
+which points at `release.jks` and holds its password. Without it, release builds are unsigned.
+
+Keep a copy of `~/.config/temporis-reader/` somewhere safe (password manager or offline backup).
+Android only installs updates signed with the same key; losing it means uninstalling, which wipes
+the app's data — back up the library from Settings first.
