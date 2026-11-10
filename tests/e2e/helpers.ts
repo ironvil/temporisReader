@@ -64,6 +64,77 @@ export function fakeWiktionary(): Buffer {
   return gzipSync(Buffer.from(lines.join('\n') + '\n'));
 }
 
+export const WIKTIONARY_DE_URL = 'https://kaikki.org/dictionary/German/kaikki.org-dictionary-German.jsonl.gz';
+
+/** kaikki.org-shaped German entries for separable verbs, compounds and sentence-initial capitals. */
+export function fakeGermanWiktionary(): Buffer {
+  const sense = (gloss: string) => ({ glosses: [gloss] });
+  const formOf = (gloss: string, lemma: string) => ({ glosses: [gloss], form_of: [{ word: lemma }], tags: ['form-of'] });
+  const entry = (word: string, pos: string, senses: unknown[], extra: Record<string, unknown> = {}) => ({ word, pos, lang: 'German', lang_code: 'de', senses, ...extra });
+  const entries = [
+    entry('fangen', 'verb', [sense('to catch')], { sounds: [{ ipa: '/ˈfaŋən/' }] }),
+    entry('fängt', 'verb', [formOf('third-person singular present of fangen', 'fangen')]),
+    entry('anfangen', 'verb', [sense('to begin, to start')], { head_templates: [{ expansion: 'anfangen (class 7 strong, third-person singular present fängt an)' }], sounds: [{ ipa: '/ˈanˌfaŋən/' }] }),
+    entry('an', 'prep', [sense('on, at')]),
+    entry('kommen', 'verb', [sense('to come')]),
+    entry('kommt', 'verb', [formOf('third-person singular present of kommen', 'kommen')]),
+    entry('zurück', 'adv', [sense('back')]),
+    entry('zurückkommen', 'verb', [sense('to come back, to return')]),
+    entry('denken', 'verb', [sense('to think')]),
+    entry('denkt', 'verb', [formOf('third-person singular present of denken', 'denken')]),
+    entry('er', 'pron', [sense('he')]),
+    entry('sie', 'pron', [sense('she; they')]),
+    entry('morgen', 'adv', [sense('tomorrow')]),
+    entry('Morgen', 'noun', [sense('morning')], { head_templates: [{ expansion: 'Morgen m (strong, genitive Morgens, plural Morgen)' }] }),
+    entry('Ich', 'noun', [sense('the self, the ego')]),
+    entry('ich', 'pron', [sense('I')]),
+    entry('Haus', 'noun', [sense('house')], { head_templates: [{ expansion: 'Haus n (strong, genitive Hauses, plural Häuser, diminutive Häuschen n or Häuslein n or Häuselein n or Häusle n or Häusel n or Häus\'l n or Häusl n or Häusli n or Häuslin n or (rare) Häuselin n)' }] }),
+    entry('Häuser', 'noun', [formOf('nominative/accusative/genitive plural of Haus', 'Haus')]),
+    entry('Tür', 'noun', [sense('door')], { head_templates: [{ expansion: 'Tür f (genitive Tür, plural Türen)' }] }),
+    entry('Schlüssel', 'noun', [sense('key')]),
+    entry('Donau', 'name', [sense('Danube')]),
+    entry('Dampfschiff', 'noun', [sense('steamship')]),
+    entry('Dampfschiffs', 'noun', [formOf('genitive singular of Dampfschiff', 'Dampfschiff')]),
+    entry('Kapitän', 'noun', [sense('captain')]),
+    entry('der', 'article', [sense('the')]),
+    entry('die', 'article', [formOf('nominative/accusative feminine singular of der', 'der')]),
+    entry('mit', 'prep', [sense('with')]),
+    entry('dich', 'pron', [formOf('accusative of du', 'du')]),
+    entry('du', 'pron', [sense('you')]),
+    entry('ist', 'verb', [formOf('third-person singular present of sein', 'sein')]),
+    entry('sein', 'verb', [sense('to be')]),
+    entry('alt', 'adj', [sense('old')]),
+    entry('und', 'conj', [sense('and')]),
+  ];
+  const lines = entries.map((e) => JSON.stringify(e));
+  for (let i = 0; i < 1100; i++) lines.push(JSON.stringify(entry(`Füllwort${i}`, 'noun', [sense(`filler ${i}`)])));
+  return gzipSync(Buffer.from(lines.join('\n') + '\n'));
+}
+
+export function germanBook(): string {
+  const sentences = [
+    'Er fängt morgen an.',
+    'Sie kommt zurück, und er denkt an dich.',
+    'Ich sehe die Häuser.',
+    'Der Donaudampfschiffskapitän ist alt.',
+    'Er fängt mit dem Haustürschlüssel an.',
+  ];
+  const chapter = (title: string, n: number) => [`# ${title}`, ...Array.from({ length: n }, (_, i) => sentences[i % sentences.length])].join('\n\n');
+  return [chapter('Erstes Kapitel', 25), chapter('Zweites Kapitel', 5)].join('\n\n');
+}
+
+/** Settings → Languages → German → Add, serving a fake kaikki.org extract. */
+export async function addGerman(page: Page): Promise<void> {
+  await page.route(WIKTIONARY_DE_URL, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/octet-stream', body: fakeGermanWiktionary(), headers: { 'access-control-allow-origin': '*' } }),
+  );
+  await openLanguageSettings(page, 'de');
+  const card = page.locator('[data-language="de"]');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Added');
+  await closeSettings(page);
+}
+
 export function frenchBook(): string {
   const sentences = [
     'Aujourd’hui, l’homme mange dans la maison.',

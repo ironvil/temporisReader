@@ -22,5 +22,6 @@ const bytes = Buffer.byteLength(text);
 const gz = gzipSync(text).length;
 const index = new WiktionaryIndex(Buffer.from(text));
 console.log({ read, kept: lines.length, mb: (bytes / 1e6).toFixed(1), gzMb: (gz / 1e6).toFixed(1), seconds: (Date.now() - started) / 1000 });
-for (const w of ['mangeaient', 'manger', 'maison', 'est', 'livre', "aujourd'hui", 'peut-être', 'belles', 'Paris']) console.log(w, JSON.stringify(index.entries(w)).slice(0, 300));
+const samples = process.env.WORDS ? process.env.WORDS.split(',') : ['mangeaient', 'manger', 'maison', 'est', 'livre', "aujourd'hui", 'peut-être', 'belles', 'Paris'];
+for (const w of samples) console.log(w, JSON.stringify(index.entries(w)).slice(0, 300));
 if (out) writeFileSync(out, text);

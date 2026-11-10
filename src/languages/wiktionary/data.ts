@@ -34,6 +34,8 @@ const LEMMA_SEP = '\u001e';
 /** Keeps a few huge entries (faire, prendre…) from dominating the file; the popup scrolls anyway. */
 const MAX_SENSES = 20;
 const MAX_GLOSS = 300;
+/** Headword lines can list every diminutive and variant (German Haus): keep the start. */
+const MAX_HEAD = 160;
 
 const clean = (s: unknown): string =>
   typeof s === 'string' ? s.replace(/[\t\n\r\u001e\u001f]+/g, ' ').trim() : '';
@@ -79,6 +81,7 @@ export function trimEntry(raw: RawEntry, langCode: string): string | null {
 
   let head = clean(raw.head_templates?.[0]?.expansion);
   if (head === word) head = '';
+  if (head.length > MAX_HEAD) head = head.slice(0, MAX_HEAD - 1).replace(/[\s,;(]+[^\s,;(]*$/, '') + '…';
   const ipa = clean(raw.sounds?.find((s) => typeof s.ipa === 'string')?.ipa);
   return [word, pos, head, ipa, senses.join(SENSE_SEP)].join('\t');
 }

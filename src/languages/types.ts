@@ -1,4 +1,4 @@
-import type { WordSegmenter } from '../segmentation/types';
+import type { WordSegmenter, WordSpan } from '../segmentation/types';
 
 /**
  * Contract every supported language implements. The reader only talks to these
@@ -22,6 +22,11 @@ export interface LookupResult<Entry = unknown> {
   source?: string;
   /** Set when there are no entries to show. */
   notice?: LookupNotice;
+  /**
+   * True when the entries describe something that isn't tracked as a word (e.g. a German compound
+   * shown as its parts): no level buttons, and looking it up changes no levels.
+   */
+  untracked?: boolean;
 }
 
 export type DictionaryState =
@@ -86,6 +91,12 @@ export interface LanguageModule<Entry = unknown> {
    * bulk-marked from guesses.
    */
   wordKey(word: string): string | null;
+  /**
+   * Optional: keys for every span of a paragraph when context matters (German separable verbs:
+   * in "Er fängt morgen an", fängt is tracked as anfangen and the particle an isn't tracked
+   * separately). Same length as `spans`; null for non-words. Without it, wordKey is used per word.
+   */
+  contextKeys?(text: string, spans: WordSpan[]): (string | null)[];
   /**
    * Identifies the data segmentation and wordKey depend on (e.g. dictionary version), or null
    * while it isn't loaded. Cached per-book word counts are rebuilt when it changes.

@@ -8,7 +8,7 @@
 import { loadBook, type OpenBook } from '../books/library';
 import type { LanguageModule } from '../languages/types';
 import { readJson, writeJson } from '../storage';
-import type { WordSegmenter } from '../segmentation/types';
+import { keyedWords } from '../languages/word-keys';
 import { KNOWN, type Level } from './known-words';
 
 /** Known-words key → number of occurrences. */
@@ -27,13 +27,11 @@ export interface KnownShare {
 }
 
 /** Counts trackable word occurrences in one chapter's paragraphs, by known-words key. */
-export function countWords(paragraphs: Iterable<string>, segmenter: WordSegmenter, keyOf: (word: string) => string | null): WordCounts {
+export function countWords(paragraphs: Iterable<string>, lang: Pick<LanguageModule, 'segmenter' | 'wordKey' | 'contextKeys'>): WordCounts {
   const counts: WordCounts = {};
   for (const text of paragraphs) {
-    for (const span of segmenter.segment(text)) {
-      if (!span.isWord) continue;
-      const word = keyOf(text.slice(span.start, span.end));
-      if (word !== null) counts[word] = (counts[word] ?? 0) + 1;
+    for (const { key } of keyedWords(lang, text)) {
+      if (key !== null) counts[key] = (counts[key] ?? 0) + 1;
     }
   }
   return counts;
@@ -85,7 +83,7 @@ export function bookWordCounts(bookId: string, lang: LanguageModule, book?: Open
     const chapters: WordCounts[] = [];
     for (const chapter of source.index.chapters) {
       const paragraphs = Array.from({ length: chapter.end - chapter.start }, (_, i) => source.paragraph(chapter.start + i));
-      chapters.push(countWords(paragraphs, lang.segmenter, (w) => lang.wordKey(w)));
+      chapters.push(countWords(paragraphs, lang));
       await yieldToUi();
     }
     const result = { key, chapters };

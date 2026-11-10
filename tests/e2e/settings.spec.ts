@@ -11,7 +11,7 @@ test('the main page lists each language with its status; a language opens its ow
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = page.locator('.view.settings');
   await expect(settings.locator('.bar-heading')).toHaveText('Settings');
-  await expect(settings.locator('.lang-link')).toHaveText(['Chinese · 中文Not added', 'French · FrançaisNot added']);
+  await expect(settings.locator('.lang-link')).toHaveText(['Chinese · 中文Not added', 'French · FrançaisNot added', 'German · DeutschNot added']);
   // Language details live on their own pages, not the main page.
   await expect(settings.locator('[data-language]')).toHaveCount(0);
   await expect(settings.getByRole('heading', { name: 'Reading' })).toBeVisible();

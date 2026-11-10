@@ -11,16 +11,30 @@ const list: WordList = {
   maxLengthFrom: (c) => (WORDS.some((w) => w.startsWith(c)) ? 2 : 0),
 };
 const segmenter = new DictionaryWordSegmenter(list, /\p{Script=Han}+/u, new IntlWordSegmenter('en'));
-const trackable = (w: string) => (WORDS.includes(w) ? w : null);
+const chinese = { segmenter, wordKey: (w: string) => (WORDS.includes(w) ? w : null) };
 
 test('countWords counts occurrences of trackable words only', () => {
-  expect(countWords(['今天阳光很好。今天。', '镜子 OK'], segmenter, trackable)).toEqual({ 今天: 2, 阳光: 1, 镜子: 1 });
-  expect(countWords([], segmenter, trackable)).toEqual({});
+  expect(countWords(['今天阳光很好。今天。', '镜子 OK'], chinese)).toEqual({ 今天: 2, 阳光: 1, 镜子: 1 });
+  expect(countWords([], chinese)).toEqual({});
 });
 
 test('countWords counts by key, so inflected forms add up under their dictionary form', () => {
-  const lemma = (w: string) => ({ mange: 'manger', mangeaient: 'manger', maison: 'maison' })[w] ?? null;
-  expect(countWords(['Il mange.', 'Ils mangeaient à la maison.'], new IntlWordSegmenter('fr'), lemma)).toEqual({ manger: 2, maison: 1 });
+  const wordKey = (w: string) => ({ mange: 'manger', mangeaient: 'manger', maison: 'maison' })[w] ?? null;
+  expect(countWords(['Il mange.', 'Ils mangeaient à la maison.'], { segmenter: new IntlWordSegmenter('fr'), wordKey })).toEqual({ manger: 2, maison: 1 });
+});
+
+test('countWords uses context keys when the language has them', () => {
+  // As German does for separable verbs: "fängt … an" counts once, as anfangen.
+  const lang = {
+    segmenter: new IntlWordSegmenter('de'),
+    wordKey: (w: string) => w.toLowerCase(),
+    contextKeys: (text: string, spans: { start: number; end: number; isWord: boolean }[]) =>
+      spans.map((s) => {
+        const w = text.slice(s.start, s.end);
+        return !s.isWord ? null : w === 'fängt' ? 'anfangen' : w === 'an' ? null : w.toLowerCase();
+      }),
+  };
+  expect(countWords(['Er fängt an.'], lang)).toEqual({ er: 1, anfangen: 1 });
 });
 
 test('knownShare weights by occurrences and counts only level 3 as known', () => {

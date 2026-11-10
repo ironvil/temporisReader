@@ -9,6 +9,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 1 s.
 - Progress is saved as chapter, paragraph, word (and character offset for exact restore).
 - Languages are added in Settings → Languages → (language), each with its own page, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT. French uses English Wiktionary via kaikki.org: a ~60 MB download that is streamed through once on the phone and trimmed to ~6 MB (`src/languages/wiktionary/`, shared by any Wiktionary language; measure with `node scripts/measure-wiktionary.mjs <file.jsonl.gz> <code>`).
+- German (Wiktionary, ~100 MB download → ~8 MB stored): separable verbs are joined with their clause-final particle (fängt … an → anfangen, tracked and counted as anfangen); compounds that aren't entries are shown as their parts (Donau + Dampfschiff + Kapitän) and not tracked; at a sentence start the lower-case word wins (Ich → ich).
 - French: inflected forms show their dictionary form (mangeaient → manger) with the inflection note, and known words are tracked by dictionary form, so every form of a word shares one level. Elisions split off (l’homme → l’ + homme) and hyphenated entries stay whole (peut-être).
 - Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.
 - Markdown bold and italics are rendered.
@@ -36,6 +37,7 @@ src/
   languages/wiktionary/     any Wiktionary language: kaikki.org data, dictionary, lookups + popup
   languages/zh/             Chinese: CC-CEDICT, pinyin, popup rendering
   languages/fr/             French: Wiktionary + elision/hyphen-aware segmenter, detection
+  languages/de/             German: Wiktionary + separable verbs, compound splitting, detection
   segmentation/             WordSegmenter interface; dictionary-based and Intl (ICU) implementations
   vocab/known-words.ts      known-word levels per language, file format
   vocab/book-stats.ts       known-word percentages per book and chapter
@@ -46,7 +48,7 @@ src/
 
 Implement `LanguageModule` under `src/languages/<id>/` and add it to `languages` in `src/languages/index.ts`. Settings, the reader, known words, percentages and highlighting all work through that interface:
 
-- `segmenter` splits paragraphs into words; `wordKey(word)` says what a word is tracked under in the known-words list (the word itself, or its dictionary form); `detect(sample)` scores text for auto-detection; `sampleText` is the settings preview.
+- `segmenter` splits paragraphs into words; `wordKey(word)` says what a word is tracked under in the known-words list (the word itself, or its dictionary form), and the optional `contextKeys(text, spans)` does the same with the sentence as context (German separable verbs, sentence-initial capitals); `detect(sample)` scores text for auto-detection; `sampleText` is the settings preview.
 - `dictionaries` are downloaded at runtime. Extend `DownloadedDictionary`: implement `process` (turn the download into data) and `decode` (load what was stored). Storage paths must never change once released.
 - Languages in English Wiktionary can extend `WiktionaryLanguage` with a `WiktionaryDictionary({ code, language, downloadSize, coverage })`: lookups, inflected forms → dictionary form and the popup are shared, so a new one only needs its segmenter, `detect` and any spelling normalisation (see `languages/fr/`). Measure the trimmed size first with `node scripts/measure-wiktionary.mjs <kaikki file> <code>`.
 

@@ -6,6 +6,7 @@
  */
 import { saveProgress, type OpenBook, type Progress } from '../books/library';
 import { getLanguage } from '../languages';
+import { keyedWords } from '../languages/word-keys';
 import type { LanguageModule, LookupResult } from '../languages/types';
 import { IntlWordSegmenter } from '../segmentation/intl';
 import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentation/types';
@@ -301,28 +302,27 @@ export class Reader {
     if (!lang || !getSettings().markKnownPrompt || Date.now() - this.pageShownAt < MIN_PAGE_DWELL_MS) return null;
     const store = knownWords(lang.id);
     if (!store.isLoaded || !lang.ready()) return null;
-    const words = wordsToMarkKnown(this.wordsOnPage(this.page), this.pageLookups, (w) => store.level(w), (w) => lang.wordKey(w));
+    const keys = this.wordsOnPage(this.page, lang).flatMap((w) => (w.key === null ? [] : [w.key]));
+    const words = wordsToMarkKnown(keys, this.pageLookups, (w) => store.level(w), (key) => key);
     return words.length ? { language: lang.id, words } : null;
   }
 
-  /** Words that start on `page`, in reading order (a word split by the page break belongs to the earlier page). */
-  private wordsOnPage(page: number): string[] {
-    return this.wordSpansOnPage(page).map((w) => w.text);
-  }
-
-  private wordSpansOnPage(page: number): { block: HTMLElement; start: number; end: number; text: string }[] {
-    const words: { block: HTMLElement; start: number; end: number; text: string }[] = [];
+  /**
+   * Words that start on `page`, in reading order, with their known-words keys (a word split by
+   * the page break belongs to the earlier page). Keys use the whole paragraph as context.
+   */
+  private wordsOnPage(page: number, lang: LanguageModule): { block: HTMLElement; start: number; end: number; key: string | null }[] {
+    const words: { block: HTMLElement; start: number; end: number; key: string | null }[] = [];
     const start = this.firstPositionOnPage(page);
     for (let b = start.paragraph; b < this.blocks.length; b++) {
       const block = this.blocks[b];
       if (this.pageOfOffset(block, 0) > page) break;
-      const text = block.textContent ?? '';
-      for (const span of this.segmenter.segment(text)) {
-        if (!span.isWord || (b === start.paragraph && span.start < start.char)) continue;
-        const p = this.pageOfOffset(block, span.start);
+      for (const word of keyedWords(lang, block.textContent ?? '')) {
+        if (b === start.paragraph && word.start < start.char) continue;
+        const p = this.pageOfOffset(block, word.start);
         if (p < page) continue;
         if (p > page) break;
-        words.push({ block, start: span.start, end: span.end, text: text.slice(span.start, span.end) });
+        words.push({ block, start: word.start, end: word.end, key: word.key });
       }
     }
     return words;
@@ -340,10 +340,9 @@ export class Reader {
 
     const fresh: Range[] = [];
     const learning: Range[] = [];
-    for (const word of this.wordSpansOnPage(this.page)) {
-      const key = lang.wordKey(word.text);
-      if (key === null) continue;
-      const level = store.level(key);
+    for (const word of this.wordsOnPage(this.page, lang)) {
+      if (word.key === null) continue;
+      const level = store.level(word.key);
       if (level === KNOWN) continue;
       const range = charRange(word.block, word.start, word.end);
       if (range) (level === undefined ? fresh : learning).push(range);
@@ -641,6 +640,7 @@ export class Reader {
     setHighlight('lookup', [range], 1); // above the new/learning tints
     const anchor = range.getClientRects()[0] ?? range.getBoundingClientRect();
     if (!result.entries.length) return this.popup.show(this.renderNotice(result), anchor);
+    if (result.untracked) return this.popup.show(lang.renderEntries(result), anchor, result.source);
     await updateLevelOnLookup(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
     const status = await statusButtons(lang.id, result.headword);
