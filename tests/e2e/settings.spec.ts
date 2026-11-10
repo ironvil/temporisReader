@@ -1,6 +1,6 @@
 /** Settings layout: the main page lists languages; each language has its own page. */
 import { expect, test } from '@playwright/test';
-import { addChinese, closeSettings, openLanguageSettings } from './helpers';
+import { addChinese, addFrench, closeSettings, openLanguageSettings } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -46,4 +46,25 @@ test('reopening settings starts on the main page', async ({ page }) => {
   await closeSettings(page);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(page.locator('.view.settings .bar-heading')).toHaveText('Settings');
+});
+
+test('the text-size preview uses the added languages (Chinese before any are added)', async ({ page }) => {
+  const previews = page.locator('.font-preview');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(previews).toHaveText(['今天早上，阳光从高高的窗户里斜斜地照进来。']);
+  await closeSettings(page);
+
+  await addFrench(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(previews).toHaveText(['Ce matin, le soleil entrait par la haute fenêtre.']);
+  await expect(previews).toHaveAttribute('lang', 'fr');
+  await closeSettings(page);
+
+  await addChinese(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(previews).toHaveText(['今天早上，阳光从高高的窗户里斜斜地照进来。', 'Ce matin, le soleil entrait par la haute fenêtre.']);
+  // Both follow the text size.
+  const before = await previews.first().evaluate((e) => getComputedStyle(e).fontSize);
+  await page.getByRole('button', { name: 'Larger text' }).click();
+  await expect.poll(() => previews.last().evaluate((e) => getComputedStyle(e).fontSize)).not.toBe(before);
 });

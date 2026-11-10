@@ -16,6 +16,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
   readonly name = 'Chinese';
   readonly nativeName = '中文';
   readonly htmlLang = 'zh-Hans';
+  readonly sampleText = '今天早上，阳光从高高的窗户里斜斜地照进来。';
   readonly cedict: CedictDictionary;
   readonly dictionaries;
   readonly segmenter: WordSegmenter;

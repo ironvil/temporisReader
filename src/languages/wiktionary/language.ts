@@ -28,6 +28,7 @@ export abstract class WiktionaryLanguage implements LanguageModule<WiktionaryLoo
   abstract readonly name: string;
   abstract readonly nativeName: string;
   abstract readonly htmlLang: string;
+  abstract readonly sampleText: string;
   abstract readonly segmenter: WordSegmenter;
   readonly dictionaries: WiktionaryDictionary[];
   private readonly keys = new Map<string, string | null>();

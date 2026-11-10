@@ -69,6 +69,8 @@ export interface LanguageModule<Entry = unknown> {
   nativeName: string;
   /** Value for the `lang` attribute on rendered text (affects fonts and line breaking). */
   htmlLang: string;
+  /** A short sentence in the language, for the text-size preview in settings. */
+  sampleText: string;
   dictionaries: Dictionary[];
   /** Splits paragraphs into words: used for lookup spans and progress word positions. */
   segmenter: WordSegmenter;

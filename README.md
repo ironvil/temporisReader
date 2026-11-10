@@ -20,19 +20,35 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 
 ```
 src/
-  books/parse.ts        txt/md → paragraphs, headings, chapters (pure)
-  books/library.ts      sources → book index, import/create/edit, progress
-  reader/reader.ts      pagination, gestures, tap-to-lookup, progress tracking
-  reader/popup.ts       dictionary popup
-  languages/types.ts    LanguageModule + Dictionary interfaces
-  languages/index.ts    language registry
-  languages/zh/         Chinese: CC-CEDICT download/parse, pinyin, popup rendering
-  segmentation/         WordSegmenter interface; dictionary-based and Intl (ICU) implementations
-  vocab/known-words.ts  known-word levels per language, file format
-  ui/                   library, book editor and settings screens
+  books/parse.ts            txt/md → paragraphs, headings, chapters (pure)
+  books/library.ts          sources → book index, import/create/edit, progress
+  reader/reader.ts          pagination, gestures, tap-to-lookup, progress tracking
+  reader/scrubber.ts        book-wide position slider
+  reader/chapter-list.ts    chapter list dialog with known-word percentages
+  reader/mark-known.ts      "mark words as known?" prompt on page turns
+  reader/word-status.ts     0/1/2/✓ buttons and level changes on lookup
+  reader/language-reminder.ts  "Add <language>?" / unsupported-language notices
+  reader/dom-text.ts        text offsets ↔ DOM, CSS highlights
+  reader/popup.ts           dictionary popup
+  languages/types.ts        LanguageModule + Dictionary interfaces
+  languages/index.ts        language registry
+  languages/downloaded-dictionary.ts  base class: download, progress, store, load, remove
+  languages/wiktionary/     any Wiktionary language: kaikki.org data, dictionary, lookups + popup
+  languages/zh/             Chinese: CC-CEDICT, pinyin, popup rendering
+  languages/fr/             French: Wiktionary + elision/hyphen-aware segmenter, detection
+  segmentation/             WordSegmenter interface; dictionary-based and Intl (ICU) implementations
+  vocab/known-words.ts      known-word levels per language, file format
+  vocab/book-stats.ts       known-word percentages per book and chapter
+  ui/                       library, book editor and settings screens
 ```
 
-To add a language, implement `LanguageModule` (with a `WordSegmenter` and one or more `Dictionary`s) under `src/languages/<id>/` and register it in `src/languages/index.ts`.
+### Adding a language
+
+Implement `LanguageModule` under `src/languages/<id>/` and add it to `languages` in `src/languages/index.ts`. Settings, the reader, known words, percentages and highlighting all work through that interface:
+
+- `segmenter` splits paragraphs into words; `wordKey(word)` says what a word is tracked under in the known-words list (the word itself, or its dictionary form); `detect(sample)` scores text for auto-detection; `sampleText` is the settings preview.
+- `dictionaries` are downloaded at runtime. Extend `DownloadedDictionary`: implement `process` (turn the download into data) and `decode` (load what was stored). Storage paths must never change once released.
+- Languages in English Wiktionary can extend `WiktionaryLanguage` with a `WiktionaryDictionary({ code, language, downloadSize, coverage })`: lookups, inflected forms → dictionary form and the popup are shared, so a new one only needs its segmenter, `detect` and any spelling normalisation (see `languages/fr/`). Measure the trimmed size first with `node scripts/measure-wiktionary.mjs <kaikki file> <code>`.
 
 ## Toolchain
 

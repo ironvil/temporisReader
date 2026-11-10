@@ -18,6 +18,7 @@ export class FrenchLanguage extends WiktionaryLanguage {
   readonly name = 'French';
   readonly nativeName = 'Français';
   readonly htmlLang = 'fr';
+  readonly sampleText = 'Ce matin, le soleil entrait par la haute fenêtre.';
   readonly segmenter: WordSegmenter;
 
   constructor(wiktionary = frenchWiktionary()) {

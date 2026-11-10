@@ -81,9 +81,14 @@ export class SettingsView {
 
   private async mainPage(): Promise<HTMLElement[]> {
     const rows = await Promise.all(languages.map((lang) => this.languageLink(lang)));
+    // Preview the text size in each language that's been added (or the first, before any are).
+    const added = [];
+    for (const lang of languages) {
+      if ((await Promise.all(lang.dictionaries.map((d) => d.state()))).every((s) => s.installed)) added.push(lang);
+    }
     return [
       el('h2', {}, 'Reading'),
-      this.readingCard(),
+      this.readingCard(added.length ? added : languages.slice(0, 1)),
       el('h2', {}, 'Languages'),
       el('div', { class: 'card lang-list' }, ...rows),
       el('h2', {}, 'Backup'),
@@ -172,10 +177,14 @@ export class SettingsView {
     );
   }
 
-  private readingCard(): HTMLElement {
+  private readingCard(previewLanguages: LanguageModule[]): HTMLElement {
     const settings = getSettings();
     const size = el('output', { class: 'font-size-value', 'aria-live': 'polite' }, `${settings.fontSize}px`);
-    const preview = el('p', { class: 'font-preview', lang: 'zh-Hans' }, '今天早上，阳光从高高的窗户里斜斜地照进来。');
+    const preview = el(
+      'div',
+      { class: 'font-previews' },
+      ...previewLanguages.map((lang) => el('p', { class: 'font-preview', lang: lang.htmlLang, 'data-language-preview': lang.id }, lang.sampleText)),
+    );
     const change = (delta: number) => {
       const fontSize = Math.max(FONT_SIZES.min, Math.min(FONT_SIZES.max, getSettings().fontSize + delta));
       size.textContent = `${fontSize}px`;
