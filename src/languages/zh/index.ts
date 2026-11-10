@@ -1,4 +1,6 @@
-import { segmentAt } from '../../segment';
+import { DictionaryWordSegmenter } from '../../segmentation/dictionary';
+import { IntlWordSegmenter } from '../../segmentation/intl';
+import { spanAt, type WordSegmenter } from '../../segmentation/types';
 import { el } from '../../ui/dom';
 import type { LanguageModule, LookupResult } from '../types';
 import { CedictDictionary } from './cedict';
@@ -6,19 +8,22 @@ import type { CedictEntry } from './cedict-parse';
 import { formatInlinePinyin, formatPinyin, pinyinSyllables } from './pinyin';
 
 const HAN = /\p{Script=Han}/u;
-const ALL_HAN = /^\p{Script=Han}+$/u;
+const HAN_RUN = /\p{Script=Han}+/gu;
 
 export class ChineseLanguage implements LanguageModule<CedictEntry> {
   readonly id = 'zh';
   readonly name = 'Chinese';
   readonly nativeName = '中文';
-  readonly htmlLang = 'zh';
+  readonly htmlLang = 'zh-Hans';
   readonly cedict: CedictDictionary;
   readonly dictionaries;
+  readonly segmenter: WordSegmenter;
 
   constructor(cedict = new CedictDictionary()) {
     this.cedict = cedict;
     this.dictionaries = [cedict];
+    // Dictionary-driven segmentation of Han text; ICU handles punctuation and embedded Latin text.
+    this.segmenter = new DictionaryWordSegmenter(cedict, HAN_RUN, new IntlWordSegmenter('zh'));
   }
 
   detect(sample: string): number {
@@ -39,8 +44,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
     const char = String.fromCodePoint(paragraph.codePointAt(index) ?? 0);
     if (!HAN.test(char)) return null;
 
-    const segment = segmentAt(paragraph, index, 'zh');
-    const span = (start: number, end: number, entries: CedictEntry[]): LookupResult<CedictEntry> => ({
+    const result = (start: number, end: number, entries: CedictEntry[]): LookupResult<CedictEntry> => ({
       start,
       end,
       headword: paragraph.slice(start, end),
@@ -50,28 +54,28 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
 
     if (!(await this.cedict.ensureLoaded())) {
       return {
-        ...span(segment.start, segment.end, []),
-        notice: { kind: 'missing-dictionary', message: 'The Chinese dictionary isn’t downloaded yet.' },
+        ...result(index, index + char.length, []),
+        notice: { kind: 'missing-dictionary', message: `${this.name} isn’t added yet. Add it in Settings → Languages.` },
       };
     }
 
-    // 1. The word ICU's segmenter puts the tapped character in.
-    const word = paragraph.slice(segment.start, segment.end);
-    if (ALL_HAN.test(word)) {
-      const entries = this.cedict.lookup(word);
-      if (entries.length) return span(segment.start, segment.end, entries);
+    // The word the segmenter puts the tapped character in (the whole paragraph is segmented,
+    // so tapping either character of 头发 gives 头发).
+    const span = spanAt(this.segmenter.segment(paragraph), index);
+    if (span) {
+      const entries = this.cedict.lookup(paragraph.slice(span.start, span.end));
+      if (entries.length) return result(span.start, span.end, entries);
     }
 
-    // 2. Longest dictionary word starting at the tapped character.
-    for (let len = Math.min(this.cedict.maxWordLength, paragraph.length - index); len >= 1; len--) {
-      const candidate = paragraph.slice(index, index + len);
-      if (!ALL_HAN.test(candidate)) continue;
-      const entries = this.cedict.lookup(candidate);
-      if (entries.length) return span(index, index + len, entries);
+    // Shouldn't normally happen (single characters are always segments), but fall back to the
+    // longest dictionary word starting at the tap.
+    for (let end = Math.min(paragraph.length, index + this.cedict.maxLengthFrom(char)); end > index; end--) {
+      const entries = this.cedict.lookup(paragraph.slice(index, end));
+      if (entries.length) return result(index, end, entries);
     }
 
     return {
-      ...span(index, index + char.length, []),
+      ...result(index, index + char.length, []),
       notice: { kind: 'not-found', message: 'No dictionary entry found.' },
     };
   }
@@ -86,7 +90,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
 
       const syllables = pinyinSyllables(entry.pinyin);
       const chars = Array.from(primary);
-      const hanzi = el('span', { class: 'zh-hanzi', lang: 'zh' });
+      const hanzi = el('span', { class: 'zh-hanzi', lang: this.htmlLang });
       chars.forEach((c, i) => {
         const tone = syllables.length === chars.length ? syllables[i].tone : 0;
         hanzi.append(el('span', { class: `tone tone-${tone}` }, c));
@@ -100,7 +104,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
             'div',
             { class: 'zh-head' },
             hanzi,
-            secondary !== primary ? el('span', { class: 'zh-alt', lang: 'zh' }, `[${secondary}]`) : null,
+            secondary !== primary ? el('span', { class: 'zh-alt', lang: this.htmlLang }, `[${secondary}]`) : null,
             el('span', { class: 'zh-pinyin' }, formatPinyin(entry.pinyin)),
           ),
           el('ol', { class: 'defs' }, ...entry.definitions.map((d) => el('li', {}, formatInlinePinyin(d)))),

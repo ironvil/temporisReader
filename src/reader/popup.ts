@@ -1,5 +1,8 @@
 import { el } from '../ui/dom';
 
+const MAX_HEIGHT_FRACTION = 0.42;
+const MAX_HEIGHT_PX = 420;
+
 /** Dictionary popup: full width, placed below the word (or above when there's no room), arrow pointing at it. */
 export class LookupPopup {
   readonly el: HTMLElement;
@@ -35,6 +38,8 @@ export class LookupPopup {
 
   private position(anchor: DOMRect): void {
     const box = this.container.getBoundingClientRect();
+    // Cap the scrollable body so long entries scroll inside the popup instead of spilling out.
+    this.body.style.maxHeight = `${Math.round(Math.min(box.height * MAX_HEIGHT_FRACTION, MAX_HEIGHT_PX))}px`;
     const wordTop = anchor.top - box.top;
     const wordBottom = anchor.bottom - box.top;
     const wordCenter = anchor.left + anchor.width / 2 - box.left;

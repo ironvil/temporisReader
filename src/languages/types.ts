@@ -1,3 +1,5 @@
+import type { WordSegmenter } from '../segmentation/types';
+
 /**
  * Contract every supported language implements. The reader only talks to these
  * interfaces, so adding a language means adding a module under src/languages/<id>/
@@ -68,6 +70,8 @@ export interface LanguageModule<Entry = unknown> {
   /** Value for the `lang` attribute on rendered text (affects fonts and line breaking). */
   htmlLang: string;
   dictionaries: Dictionary[];
+  /** Splits paragraphs into words: used for lookup spans and progress word positions. */
+  segmenter: WordSegmenter;
 
   /** Rough confidence 0..1 that `sample` is written in this language. */
   detect(sample: string): number;

@@ -1,5 +1,5 @@
 import { languages } from '../languages';
-import type { Dictionary } from '../languages/types';
+import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
 import { el, formatBytes, toast } from './dom';
 import { iconButton } from './icons';
@@ -42,23 +42,12 @@ export class SettingsView {
   private async render(): Promise<void> {
     this.cleanups.forEach((c) => c());
     this.cleanups = [];
-
-    const dictionarySections = await Promise.all(
-      languages.map(async (lang) =>
-        el(
-          'div',
-          { class: 'group' },
-          el('h3', {}, `${lang.name} · ${lang.nativeName}`),
-          ...(await Promise.all(lang.dictionaries.map((d) => this.dictionaryCard(d)))),
-        ),
-      ),
-    );
-
+    const languageCards = await Promise.all(languages.map((lang) => this.languageCard(lang)));
     this.content.replaceChildren(
       el('h2', {}, 'Reading'),
       this.readingCard(),
-      el('h2', {}, 'Dictionaries'),
-      ...dictionarySections,
+      el('h2', {}, 'Languages'),
+      ...languageCards,
       el('h2', {}, 'About'),
       el('div', { class: 'card muted' }, `Temporis Reader ${__APP_VERSION__}`),
     );
@@ -67,7 +56,7 @@ export class SettingsView {
   private readingCard(): HTMLElement {
     const settings = getSettings();
     const size = el('output', { class: 'font-size-value', 'aria-live': 'polite' }, `${settings.fontSize}px`);
-    const preview = el('p', { class: 'font-preview', lang: 'zh' }, '今天早上，阳光从高高的窗户里斜斜地照进来。');
+    const preview = el('p', { class: 'font-preview', lang: 'zh-Hans' }, '今天早上，阳光从高高的窗户里斜斜地照进来。');
     const change = (delta: number) => {
       const fontSize = Math.max(FONT_SIZES.min, Math.min(FONT_SIZES.max, getSettings().fontSize + delta));
       size.textContent = `${fontSize}px`;
@@ -96,74 +85,104 @@ export class SettingsView {
     );
   }
 
-  private async dictionaryCard(dictionary: Dictionary): Promise<HTMLElement> {
-    const status = el('p', { class: 'dict-status', 'aria-live': 'polite' });
+  /** A language is "added" when all of its dictionaries are downloaded. */
+  private async languageCard(lang: LanguageModule): Promise<HTMLElement> {
+    const status = el('p', { class: 'lang-status', 'aria-live': 'polite' });
+    const action = el('div', {});
     const bar = el('progress', { max: '1', hidden: true });
-    const actions = el('div', { class: 'actions' });
+    const dictionaryRows = el('div', {});
     let lastError: string | null = null;
 
-    const refresh = async () => {
-      const progress = dictionary.installProgress();
-      actions.replaceChildren();
-      if (progress && (progress.phase === 'downloading' || progress.phase === 'processing')) {
-        bar.hidden = false;
-        if (progress.phase === 'downloading') {
-          const total = progress.total ? ` of ${formatBytes(progress.total)}` : '';
-          status.textContent = `Downloading… ${formatBytes(progress.bytes ?? 0)}${total}`;
-          if (progress.total) bar.value = (progress.bytes ?? 0) / progress.total;
-          else bar.removeAttribute('value');
-        } else {
-          status.textContent = 'Preparing dictionary…';
-          bar.removeAttribute('value');
+    const installAll = async () => {
+      lastError = null;
+      for (const d of lang.dictionaries) {
+        try {
+          await d.install();
+        } catch {
+          return; // reported through onProgress
         }
-        return;
-      }
-      bar.hidden = true;
-      const state = await dictionary.state();
-      status.textContent = state.installed
-        ? `Installed · ${state.entryCount.toLocaleString()} entries${state.version ? ` · ${state.version}` : ''}`
-        : `Not downloaded · ${dictionary.downloadSize}`;
-      if (lastError) status.textContent += ` · Last attempt failed: ${lastError}`;
-
-      const install = el('button', { type: 'button', class: 'button' }, state.installed ? 'Update' : 'Download');
-      install.addEventListener('click', () => {
-        lastError = null;
-        dictionary.install().catch(() => undefined); // reported through onProgress
-      });
-      actions.append(install);
-      if (state.installed) {
-        const remove = el('button', { type: 'button', class: 'button secondary' }, 'Delete');
-        remove.addEventListener('click', async () => {
-          if (!confirm(`Delete ${dictionary.name}? Word lookup won’t work until you download it again.`)) return;
-          await dictionary.uninstall();
-          await refresh();
-        });
-        actions.append(remove);
       }
     };
 
-    this.cleanups.push(
-      dictionary.onProgress((p) => {
-        if (p.phase === 'error') {
-          lastError = p.error ?? 'Unknown error';
-          toast(`${dictionary.name} download failed`);
+    const refresh = async () => {
+      const states = await Promise.all(lang.dictionaries.map((d) => d.state()));
+      const active = lang.dictionaries.find((d) => {
+        const p = d.installProgress();
+        return p && (p.phase === 'downloading' || p.phase === 'processing');
+      });
+      const added = states.every((s) => s.installed);
+
+      action.replaceChildren();
+      if (active) {
+        const p = active.installProgress()!;
+        bar.hidden = false;
+        if (p.phase === 'downloading') {
+          status.textContent = `Downloading ${active.name}… ${formatBytes(p.bytes ?? 0)}${p.total ? ` of ${formatBytes(p.total)}` : ''}`;
+          if (p.total) bar.value = (p.bytes ?? 0) / p.total;
+          else bar.removeAttribute('value');
+        } else {
+          status.textContent = `Preparing ${active.name}…`;
+          bar.removeAttribute('value');
         }
-        if (p.phase === 'done') toast(`${dictionary.name} installed`);
-        void refresh();
-      }),
-    );
+      } else {
+        bar.hidden = true;
+        const size = lang.dictionaries.map((d) => d.downloadSize).join(' + ');
+        status.textContent = added ? 'Added' : `Not added · ${size} download`;
+        if (lastError) status.textContent += ` · Download failed: ${lastError}`;
+
+        const button = el('button', { type: 'button', class: added ? 'button secondary' : 'button' }, added ? 'Remove' : 'Add');
+        button.addEventListener('click', async () => {
+          if (!added) return void installAll();
+          if (!confirm(`Remove ${lang.name}? Its dictionaries will be deleted and word lookup won’t work until you add it again.`)) return;
+          for (const d of lang.dictionaries) await d.uninstall();
+          await refresh();
+        });
+        action.append(button);
+      }
+      dictionaryRows.replaceChildren(...lang.dictionaries.map((d, i) => this.dictionaryRow(d, states[i], !active)));
+    };
+
+    for (const d of lang.dictionaries) {
+      this.cleanups.push(
+        d.onProgress((p) => {
+          if (p.phase === 'error') {
+            lastError = p.error ?? 'Unknown error';
+            toast(`${lang.name}: download failed`);
+          }
+          if (p.phase === 'done') toast(`${d.name} installed`);
+          void refresh();
+        }),
+      );
+    }
     await refresh();
 
-    const link = el('a', { href: dictionary.homepage, target: '_blank', rel: 'noopener' }, dictionary.license);
     return el(
       'div',
-      { class: 'card', 'data-dictionary': dictionary.id },
-      el('div', { class: 'card-title' }, dictionary.name),
-      el('p', { class: 'muted' }, dictionary.description),
-      status,
+      { class: 'card', 'data-language': lang.id },
+      el(
+        'div',
+        { class: 'lang-head' },
+        el('div', {}, el('div', { class: 'lang-name' }, `${lang.name} · ${lang.nativeName}`), status),
+        action,
+      ),
       bar,
-      actions,
-      el('p', { class: 'license' }, 'License: ', link),
+      dictionaryRows,
+    );
+  }
+
+  private dictionaryRow(dictionary: Dictionary, state: DictionaryState, idle: boolean): HTMLElement {
+    const details = state.installed
+      ? `${state.entryCount.toLocaleString()} entries${state.version ? ` · ${state.version.slice(0, 10)}` : ''}`
+      : dictionary.downloadSize;
+    const update = state.installed && idle ? el('button', { type: 'button', class: 'button secondary' }, 'Update dictionary') : null;
+    update?.addEventListener('click', () => dictionary.install().catch(() => undefined));
+    return el(
+      'div',
+      { class: 'dict-row', 'data-dictionary': dictionary.id },
+      el('div', {}, el('strong', {}, dictionary.name), ` · ${dictionary.description}`),
+      el('div', { class: 'muted dict-status' }, details),
+      update ? el('div', { class: 'actions' }, update) : null,
+      el('div', { class: 'license' }, 'License: ', el('a', { href: dictionary.homepage, target: '_blank', rel: 'noopener' }, dictionary.license)),
     );
   }
 }

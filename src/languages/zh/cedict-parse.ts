@@ -14,6 +14,8 @@ export interface CedictIndex {
   entryCount: number;
   /** Longest headword, in UTF-16 units. */
   maxLength: number;
+  /** First character → length of the longest headword starting with it (drives segmentation). */
+  maxLengthByFirstChar: Map<string, number>;
   /** Publication date from the file header, if present. */
   date: string | null;
 }
@@ -33,6 +35,7 @@ export function parseCedictLine(line: string): CedictEntry | null {
 
 export function buildCedictIndex(text: string): CedictIndex {
   const lines = new Map<string, string[]>();
+  const maxLengthByFirstChar = new Map<string, number>();
   let entryCount = 0;
   let maxLength = 1;
   let date: string | null = null;
@@ -41,6 +44,8 @@ export function buildCedictIndex(text: string): CedictIndex {
     const list = lines.get(key);
     if (list) list.push(line);
     else lines.set(key, [line]);
+    const first = String.fromCodePoint(key.codePointAt(0)!);
+    if ((maxLengthByFirstChar.get(first) ?? 0) < key.length) maxLengthByFirstChar.set(first, key.length);
   };
 
   let pos = 0;
@@ -67,7 +72,7 @@ export function buildCedictIndex(text: string): CedictIndex {
     entryCount++;
     maxLength = Math.max(maxLength, simplified.length, traditional.length);
   }
-  return { lines, entryCount, maxLength, date };
+  return { lines, entryCount, maxLength, maxLengthByFirstChar, date };
 }
 
 /**

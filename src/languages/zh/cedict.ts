@@ -1,6 +1,7 @@
 /** CC-CEDICT, downloaded from MDBG at runtime (never bundled in the APK). */
 import { downloadToFile, gunzipText } from '../../download';
 import { moveFile, readBytes, readJson, removeFile, writeJson } from '../../storage';
+import type { WordList } from '../../segmentation/dictionary';
 import type { Dictionary, DictionaryState, InstallProgress } from '../types';
 import { buildCedictIndex, lookupCedict, type CedictEntry, type CedictIndex } from './cedict-parse';
 
@@ -18,7 +19,7 @@ interface Meta {
   version: string | null;
 }
 
-export class CedictDictionary implements Dictionary {
+export class CedictDictionary implements Dictionary, WordList {
   readonly id = 'cc-cedict';
   readonly name = 'CC-CEDICT';
   readonly shortName = 'CC';
@@ -28,6 +29,7 @@ export class CedictDictionary implements Dictionary {
   readonly homepage = 'https://www.mdbg.net/chinese/dictionary?page=cc-cedict';
 
   private index: CedictIndex | null = null;
+  private _revision = 0;
   private loading: Promise<boolean> | null = null;
   private installing: Promise<void> | null = null;
   private progress: InstallProgress | null = null;
@@ -55,7 +57,7 @@ export class CedictDictionary implements Dictionary {
     if (!(await readJson<Meta>(META_FILE))) return false;
     const bytes = await readBytes(DATA_FILE);
     if (!bytes) return false;
-    this.index = buildCedictIndex(await gunzipText(bytes));
+    this.setIndex(buildCedictIndex(await gunzipText(bytes)));
     return true;
   }
 
@@ -63,8 +65,22 @@ export class CedictDictionary implements Dictionary {
     return this.index ? lookupCedict(this.index, word) : [];
   }
 
-  get maxWordLength(): number {
-    return Math.min(this.index?.maxLength ?? 1, 16);
+  // WordList, used by the segmenter.
+  get revision(): number {
+    return this._revision;
+  }
+
+  has(word: string): boolean {
+    return this.index?.lines.has(word) ?? false;
+  }
+
+  maxLengthFrom(firstChar: string): number {
+    return this.index?.maxLengthByFirstChar.get(firstChar) ?? 0;
+  }
+
+  private setIndex(index: CedictIndex | null) {
+    this.index = index;
+    this._revision++;
   }
 
   install(): Promise<void> {
@@ -85,7 +101,7 @@ export class CedictDictionary implements Dictionary {
 
       await moveFile(TEMP_FILE, DATA_FILE);
       await writeJson(META_FILE, { entryCount: index.entryCount, installedAt: Date.now(), version: index.date } satisfies Meta);
-      this.index = index;
+      this.setIndex(index);
       this.emit({ phase: 'done' });
     } catch (err) {
       await removeFile(TEMP_FILE);
@@ -99,7 +115,7 @@ export class CedictDictionary implements Dictionary {
   async uninstall(): Promise<void> {
     await removeFile(META_FILE);
     await removeFile(DATA_FILE);
-    this.index = null;
+    this.setIndex(null);
   }
 
   installProgress(): InstallProgress | null {

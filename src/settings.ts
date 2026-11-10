@@ -5,13 +5,11 @@ export type Theme = 'system' | 'light' | 'dark';
 export interface Settings {
   fontSize: number;
   theme: Theme;
-  /** User tapped "Not now" on the first-run dictionary prompt. */
-  dictionaryPromptDismissed: boolean;
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system', dictionaryPromptDismissed: false };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system' };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };

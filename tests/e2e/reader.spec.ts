@@ -6,14 +6,9 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('body[data-ready]')).toBeAttached();
 });
 
-test('empty library offers import and the dictionary download', async ({ page }) => {
+test('empty library offers import and does not prompt for downloads', async ({ page }) => {
   await expect(page.getByText('No books yet')).toBeVisible();
-  await expect(page.getByText('Download the Chinese dictionary?')).toBeVisible();
-  await page.getByRole('button', { name: 'Not now' }).click();
-  await expect(page.getByText('Download the Chinese dictionary?')).toBeHidden();
-  await page.reload();
-  await expect(page.locator('body[data-ready]')).toBeAttached();
-  await expect(page.getByText('Download the Chinese dictionary?')).toBeHidden();
+  await expect(page.getByText(/download/i)).toHaveCount(0);
 });
 
 test('imports a txt book and detects chapters', async ({ page }) => {
@@ -25,6 +20,21 @@ test('imports a txt book and detects chapters', async ({ page }) => {
 test('imports markdown using its H1 as the title', async ({ page }) => {
   await importBook(page, 'notes.md', '# 我的书\n\n## 第一章\n\n**你好**，世界。\n');
   await expect(page.locator('.book-name')).toHaveText('我的书');
+});
+
+test('renders markdown bold and italics', async ({ page }) => {
+  await importBook(page, 'styled.md', '# 书\n\n她的**头发**是*白金色*的，***非常***长。\n');
+  await openFirstBook(page);
+  await expect(page.locator('.page-flow strong').first()).toHaveText('头发');
+  await expect(page.locator('.page-flow em').first()).toHaveText('白金色');
+  await expect(page.locator('.page-flow strong em')).toHaveText('非常');
+  await expect(page.locator('.page-flow p')).toHaveText('她的头发是白金色的，非常长。');
+});
+
+test('single-chapter books hide the chapter number', async ({ page }) => {
+  await importBook(page, 'short.txt', '一。\n二。\n');
+  await openFirstBook(page);
+  await expect(page.locator('.chapter-count')).toBeHidden();
 });
 
 test('rejects unsupported files', async ({ page }) => {
@@ -40,24 +50,26 @@ test('paginates, turns pages by button and swipe, and crosses chapters', async (
   expect(start).toEqual({ page: 1, total: expect.any(Number) });
   expect(start.total).toBeGreaterThan(2);
   await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
   await expect(page.getByRole('button', { name: 'Previous page' })).toBeDisabled();
 
   await page.getByRole('button', { name: 'Next page' }).click();
-  await expect(page.locator('.page-indicator')).toHaveText(`2 / ${start.total}`);
+  await expect(page.locator('.page-count')).toHaveText(`2 / ${start.total}`);
 
   await swipe(page, 'left');
-  await expect(page.locator('.page-indicator')).toHaveText(`3 / ${start.total}`);
+  await expect(page.locator('.page-count')).toHaveText(`3 / ${start.total}`);
   await swipe(page, 'right');
-  await expect(page.locator('.page-indicator')).toHaveText(`2 / ${start.total}`);
+  await expect(page.locator('.page-count')).toHaveText(`2 / ${start.total}`);
 
   await page.getByRole('button', { name: 'Next chapter' }).click();
   await expect(page.locator('.chapter-title')).toHaveText('第二章 镜子');
-  await expect(page.locator('.page-indicator')).toHaveText(/^1 \/ \d+$/);
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
+  await expect(page.locator('.page-count')).toHaveText(/^1 \/ \d+$/);
 
   // Going back from the first page of a chapter lands on the last page of the previous one.
   await page.getByRole('button', { name: 'Previous page' }).click();
   await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
-  await expect(page.locator('.page-indicator')).toHaveText(`${start.total} / ${start.total}`);
+  await expect(page.locator('.page-count')).toHaveText(`${start.total} / ${start.total}`);
 });
 
 test('only the current page is visible (no scrolling)', async ({ page }) => {
@@ -66,7 +78,7 @@ test('only the current page is visible (no scrolling)', async ({ page }) => {
   const area = page.locator('.page-area');
   expect(await area.evaluate((e) => getComputedStyle(e).overflow)).toBe('hidden');
   await page.mouse.wheel(0, 2000);
-  await expect(page.locator('.page-indicator')).toHaveText(/^1 \//);
+  await expect(page.locator('.page-count')).toHaveText(/^1 \//);
 });
 
 test('remembers the reading position across restarts', async ({ page }) => {
@@ -74,7 +86,7 @@ test('remembers the reading position across restarts', async ({ page }) => {
   await openFirstBook(page);
   const { total } = await pageIndicator(page);
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next page' }).click();
-  await expect(page.locator('.page-indicator')).toHaveText(`4 / ${total}`);
+  await expect(page.locator('.page-count')).toHaveText(`4 / ${total}`);
 
   // Back to the library flushes progress immediately.
   await page.getByRole('button', { name: 'Library' }).click();
@@ -84,7 +96,7 @@ test('remembers the reading position across restarts', async ({ page }) => {
   await page.reload();
   await expect(page.locator('body[data-ready]')).toBeAttached();
   await openFirstBook(page);
-  await expect(page.locator('.page-indicator')).toHaveText(`4 / ${total}`);
+  await expect(page.locator('.page-count')).toHaveText(`4 / ${total}`);
 });
 
 test('stores progress as chapter, paragraph and word', async ({ page }) => {

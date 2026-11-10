@@ -218,16 +218,6 @@ a {
   overflow-y: auto;
   padding: 16px calc(var(--safe-right) + 16px) calc(var(--safe-bottom) + 16px) calc(var(--safe-left) + 16px);
 }
-.banner {
-  background: var(--panel-2);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-.banner p {
-  margin: 4px 0 0;
-  color: var(--muted);
-}
 .book-list {
   list-style: none;
   margin: 0;
@@ -363,7 +353,9 @@ progress {
   column-fill: auto;
   font-size: var(--reader-font-size);
   line-height: 1.65;
-  text-align: justify;
+  /* Left aligned: justify spreads leftover space between every CJK character. */
+  text-align: start;
+  font-kerning: normal;
   orphans: 1;
   widows: 1;
   will-change: transform;
@@ -384,9 +376,21 @@ progress {
 }
 .page-indicator {
   flex: 1;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+.page-count {
+  color: var(--fg);
+}
+.chapter-count {
+  font-size: 0.75rem;
+}
+.chapter-count:empty {
+  display: none;
 }
 
 /* Lookup popup */
@@ -395,9 +399,8 @@ progress {
   left: calc(var(--safe-left) + 8px);
   right: calc(var(--safe-right) + 8px);
   z-index: 5;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  max-height: min(45%, 400px);
+  display: flex;
+  align-items: flex-end;
   background: var(--bg);
   border: 1.5px solid var(--muted);
   border-radius: 10px;
@@ -424,7 +427,11 @@ progress {
 }
 .lookup-body {
   position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
   overflow-y: auto;
+  overflow-wrap: anywhere;
   overscroll-behavior: contain;
   touch-action: pan-y;
   padding: 8px 4px 8px 12px;
@@ -432,9 +439,10 @@ progress {
 }
 .lookup-badge {
   align-self: end;
-  padding: 0 14px 10px 4px;
+  flex: none;
+  padding: 0 12px 8px 4px;
   font-weight: 700;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   letter-spacing: -0.02em;
 }
 .lookup-notice {
@@ -461,7 +469,7 @@ progress {
   gap: 4px 10px;
 }
 .zh-hanzi {
-  font-size: 1.75rem;
+  font-size: 1.6rem;
   line-height: 1.2;
 }
 .zh-alt {
@@ -469,7 +477,7 @@ progress {
   color: var(--muted);
 }
 .zh-pinyin {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 600;
 }
 .tone-1 { color: var(--tone-1); }
@@ -480,12 +488,38 @@ progress {
 .defs {
   margin: 6px 0 0;
   padding-left: 1.75em;
-  font-size: 1.125rem;
-  line-height: 1.45;
+  font-size: 1.0625rem;
+  line-height: 1.4;
 }
 .defs li {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 .defs li::marker {
   font-weight: 700;
+}
+
+/* Languages in settings */
+.lang-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lang-name {
+  font-weight: 600;
+  font-size: 1.0625rem;
+}
+.lang-status {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 2px 0 0 !important;
+}
+.dict-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+.dict-row .actions {
+  margin-top: 8px;
 }

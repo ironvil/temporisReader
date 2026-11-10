@@ -14,6 +14,12 @@ export function fakeCedict(): Buffer {
     '陽光 阳光 [yang2 guang1] /sunshine/',
     '窗戶 窗户 [chuang1 hu5] /window/',
     '今天 今天 [jin1 tian1] /today/',
+    '早上 早上 [zao3 shang5] /early morning/',
+    '白金 白金 [bai2 jin1] /platinum/',
+    '金色 金色 [jin1 se4] /golden/',
+    '鏡子 镜子 [jing4 zi5] /mirror/',
+    '貓頭鷹 猫头鹰 [mao1 tou2 ying1] /owl/',
+    '了 了 [le5] /' + Array.from({ length: 30 }, (_, i) => `long definition number ${i + 1} to make the popup overflow`).join('/') + '/',
   ];
   for (let i = 0; i < 1100; i++) lines.push(`測${i} 测${i} [ce4] /filler ${i}/`);
   return gzipSync(Buffer.from(lines.join('\n')));
@@ -37,7 +43,19 @@ export async function importBook(page: Page, name: string, content: string): Pro
 
 export async function openFirstBook(page: Page): Promise<void> {
   await page.locator('.book-open').first().click();
-  await expect(page.locator('.page-indicator')).toHaveText(/^\d+ \/ \d+$/);
+  await expect(page.locator('.page-count')).toHaveText(/^\d+ \/ \d+$/);
+}
+
+/** Settings → Languages → Chinese → Add, serving a fake CC-CEDICT. */
+export async function addChinese(page: Page): Promise<void> {
+  await page.route(CEDICT_URL, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/x-gzip', body: fakeCedict(), headers: { 'access-control-allow-origin': '*' } }),
+  );
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('[data-language="zh"]');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Added');
+  await page.getByRole('button', { name: 'Close settings' }).click();
 }
 
 /** Waits for page-turn animations to finish so geometry is stable. */
@@ -46,7 +64,7 @@ export async function settled(page: Page): Promise<void> {
 }
 
 export async function pageIndicator(page: Page): Promise<{ page: number; total: number }> {
-  const [current, total] = (await page.locator('.page-indicator').textContent())!.split(' / ').map(Number);
+  const [current, total] = (await page.locator('.page-count').textContent())!.split(' / ').map(Number);
   return { page: current, total };
 }
 
@@ -55,18 +73,29 @@ export async function tapText(page: Page, needle: string, charOffset = 0): Promi
   const point = await page.evaluate(
     ({ needle, charOffset }) => {
       const area = document.querySelector('.page-area')!.getBoundingClientRect();
+      const position = (block: HTMLElement, offset: number) => {
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+          if (offset < n.length) return { node: n, offset };
+          offset -= n.length;
+        }
+        throw new Error('offset out of range');
+      };
       for (const block of document.querySelectorAll<HTMLElement>('.page-flow [data-block]')) {
-        const text = block.firstChild as Text;
+        const text = block.textContent!;
         let from = 0;
         let at: number;
-        while ((at = text.data.indexOf(needle, from)) >= 0) {
+        while ((at = text.indexOf(needle, from)) >= 0) {
           const range = document.createRange();
-          range.setStart(text, at + charOffset);
-          range.setEnd(text, at + charOffset + 1);
+          const p = position(block, at + charOffset);
+          range.setStart(p.node, p.offset);
+          range.setEnd(p.node, p.offset + 1);
           const r = range.getBoundingClientRect();
-          if (r.left >= area.left && r.right <= area.right && r.top >= area.top && r.bottom <= area.bottom) {
-            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-          }
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          const onPage = r.left >= area.left && r.right <= area.right && r.top >= area.top && r.bottom <= area.bottom;
+          // Skip text hidden under the popup, like a finger would.
+          if (onPage && block.contains(document.elementFromPoint(x, y))) return { x, y };
           from = at + 1;
         }
       }

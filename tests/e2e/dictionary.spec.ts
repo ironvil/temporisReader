@@ -1,24 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
-import { CEDICT_URL, chineseBook, fakeCedict, importBook, openFirstBook, tapText } from './helpers';
+import { addChinese, CEDICT_URL, chineseBook, importBook, openFirstBook, tapText } from './helpers';
 
 async function start(page: Page) {
   await page.goto('/');
   await expect(page.locator('body[data-ready]')).toBeAttached();
 }
 
-async function installDictionary(page: Page) {
-  await page.route(CEDICT_URL, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/x-gzip', body: fakeCedict(), headers: { 'access-control-allow-origin': '*' } }),
-  );
-  await page.getByRole('button', { name: 'Download', exact: true }).click();
-  const card = page.locator('[data-dictionary="cc-cedict"]');
-  await expect(card.locator('.dict-status')).toHaveText(/^Installed · 1,106 entries · 2026-11-01/);
-  await page.getByRole('button', { name: 'Close settings' }).click();
-}
-
-test('download from the first-run banner, then look up words', async ({ page }) => {
+test('add Chinese in settings, then look up words', async ({ page }) => {
   await start(page);
-  await installDictionary(page);
+  await addChinese(page);
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
 
@@ -35,20 +25,80 @@ test('download from the first-run banner, then look up words', async ({ page }) 
   ]);
   await expect(popup.locator('.lookup-badge')).toHaveText('CC');
 
-  // Tapping the second character of a word selects the whole word.
-  await tapText(page, '头发', 1);
-  await expect(popup.locator('.zh-hanzi')).toHaveText('头发');
-  await expect(popup.locator('.zh-alt')).toHaveText('[頭髮]');
-  await expect(popup.locator('.zh-pinyin')).toHaveText('tóufa');
+  // Tapping either character of a word selects the whole word.
+  for (const offset of [0, 1]) {
+    await tapText(page, '头发', offset);
+    await expect(popup.locator('.zh-hanzi')).toHaveText('头发');
+    await expect(popup.locator('.zh-alt')).toHaveText('[頭髮]');
+    await expect(popup.locator('.zh-pinyin')).toHaveText('tóufa');
+  }
+
+  // Three-character words and words inside longer runs.
+  await tapText(page, '猫头鹰', 1);
+  await expect(popup.locator('.zh-hanzi')).toHaveText('猫头鹰');
+  await tapText(page, '早上', 1);
+  await expect(popup.locator('.zh-hanzi')).toHaveText('早上');
 
   // Tapping punctuation closes the popup.
   await tapText(page, '，');
   await expect(popup).toBeHidden();
 });
 
+test('segmentation does not depend on the browser word breaker', async ({ page }) => {
+  // Android WebView's ICU has no Chinese dictionary and splits every character; simulate that.
+  await page.addInitScript(() => {
+    const Original = Intl.Segmenter;
+    (Intl as { Segmenter: typeof Intl.Segmenter }).Segmenter = class extends Original {
+      constructor(locale?: string | string[], options?: Intl.SegmenterOptions) {
+        super('en', options);
+        void locale;
+      }
+    } as typeof Intl.Segmenter;
+  });
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'book.txt', chineseBook());
+  await openFirstBook(page);
+  await tapText(page, '头发', 1);
+  await expect(page.locator('.lookup-popup .zh-hanzi')).toHaveText('头发');
+});
+
+test('lookups work inside bold and italic text', async ({ page }) => {
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'styled.md', '# 书\n\n她的**头发**是*白金*的。\n');
+  await openFirstBook(page);
+  await tapText(page, '头发', 1);
+  await expect(page.locator('.lookup-popup .zh-hanzi')).toHaveText('头发');
+  await tapText(page, '白金', 1);
+  await expect(page.locator('.lookup-popup .zh-pinyin')).toHaveText('báijīn');
+});
+
+test('long entries scroll inside the popup instead of overflowing', async ({ page }) => {
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'le.txt', '第一章\n她来了。\n');
+  await openFirstBook(page);
+  await tapText(page, '了');
+  const popup = page.locator('.lookup-popup');
+  await expect(popup.locator('.defs li')).toHaveCount(30);
+
+  const geometry = await page.evaluate(() => {
+    const wrap = document.querySelector('.page-wrap')!.getBoundingClientRect();
+    const box = document.querySelector('.lookup-popup')!.getBoundingClientRect();
+    const body = document.querySelector('.lookup-body')!;
+    const last = document.querySelector('.defs li:last-child')!.getBoundingClientRect();
+    return { wrapTop: wrap.top, wrapBottom: wrap.bottom, top: box.top, bottom: box.bottom, scrollable: body.scrollHeight > body.clientHeight, lastBottom: last.bottom };
+  });
+  expect(geometry.top).toBeGreaterThanOrEqual(geometry.wrapTop);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.wrapBottom);
+  expect(geometry.scrollable).toBe(true);
+  expect(geometry.lastBottom).toBeGreaterThan(geometry.bottom); // hidden below, reachable by scrolling
+});
+
 test('popup points at the word', async ({ page }) => {
   await start(page);
-  await installDictionary(page);
+  await addChinese(page);
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
 
@@ -81,7 +131,7 @@ test('popup points at the word', async ({ page }) => {
 
 test('popup closes on page turn and on Escape', async ({ page }) => {
   await start(page);
-  await installDictionary(page);
+  await addChinese(page);
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
   const popup = page.locator('.lookup-popup');
@@ -97,22 +147,23 @@ test('popup closes on page turn and on Escape', async ({ page }) => {
   await expect(popup).toBeHidden();
 });
 
-test('lookup without a dictionary points to settings', async ({ page }) => {
+test('lookup before adding the language points to settings', async ({ page }) => {
   await start(page);
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
   await tapText(page, '阳光');
   const popup = page.locator('.lookup-popup');
-  await expect(popup).toContainText('dictionary isn’t downloaded yet');
+  await expect(popup).toContainText('Chinese isn’t added yet');
   await popup.getByRole('button', { name: 'Open settings' }).click();
-  await expect(page.locator('[data-dictionary="cc-cedict"] .dict-status')).toHaveText(/^Not downloaded/);
+  await expect(page.locator('[data-language="zh"] .lang-status')).toHaveText('Not added · 4 MB download');
 });
 
 test('failed download is reported and nothing is installed', async ({ page }) => {
   await start(page);
   await page.route(CEDICT_URL, (route) => route.fulfill({ status: 500, body: 'nope', headers: { 'access-control-allow-origin': '*' } }));
-  await page.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(page.locator('[data-dictionary="cc-cedict"] .dict-status')).toHaveText(/^Not downloaded · 4 MB · Last attempt failed/);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.locator('[data-language="zh"]').getByRole('button', { name: 'Add' }).click();
+  await expect(page.locator('[data-language="zh"] .lang-status')).toHaveText(/^Not added · 4 MB download · Download failed/);
 });
 
 test('rejects a download that is not CC-CEDICT', async ({ page }) => {
@@ -120,16 +171,16 @@ test('rejects a download that is not CC-CEDICT', async ({ page }) => {
   await page.route(CEDICT_URL, (route) =>
     route.fulfill({ status: 200, body: '<html>captive portal</html>', headers: { 'access-control-allow-origin': '*' } }),
   );
-  await page.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(page.locator('[data-dictionary="cc-cedict"] .dict-status')).toContainText('does not look like CC-CEDICT');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.locator('[data-language="zh"]').getByRole('button', { name: 'Add' }).click();
+  await expect(page.locator('[data-language="zh"] .lang-status')).toContainText('does not look like CC-CEDICT');
 });
 
-test('dictionary survives restart and can be deleted', async ({ page }) => {
+test('added language survives restart and can be removed', async ({ page }) => {
   await start(page);
-  await installDictionary(page);
+  await addChinese(page);
   await page.reload();
   await expect(page.locator('body[data-ready]')).toBeAttached();
-  await expect(page.getByText('Download the Chinese dictionary?')).toBeHidden();
 
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
@@ -137,7 +188,9 @@ test('dictionary survives restart and can be deleted', async ({ page }) => {
   await expect(page.locator('.zh-pinyin')).toHaveText('jīntiān');
 
   await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('[data-language="zh"]');
+  await expect(card.locator('[data-dictionary="cc-cedict"] .dict-status')).toHaveText(/^1,1\d\d entries · 2026-11-01$/);
   page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await expect(page.locator('[data-dictionary="cc-cedict"] .dict-status')).toHaveText(/^Not downloaded/);
+  await card.getByRole('button', { name: 'Remove' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Not added · 4 MB download');
 });

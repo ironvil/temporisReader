@@ -4,7 +4,7 @@
  */
 
 /** Bump when parsing rules change so stored indexes are rebuilt from the source file. */
-export const PARSER_VERSION = 1;
+export const PARSER_VERSION = 2;
 
 export type BookFormat = 'txt' | 'md';
 
@@ -23,6 +23,8 @@ export interface ParsedBook {
   paragraphs: string[];
   /** Indices of paragraphs that are headings. */
   headings: number[];
+  /** Bold/italic ranges, keyed by paragraph index (only paragraphs that have any). */
+  marks: Record<number, InlineMark[]>;
   chapters: Chapter[];
 }
 
@@ -57,11 +59,12 @@ export function formatFromFileName(name: string): BookFormat | null {
 
 export function parseBook(raw: string, format: BookFormat, fallbackTitle: string): ParsedBook {
   const text = raw.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const { paragraphs, headings, title } = format === 'md' ? parseMarkdown(text) : parseTxt(text);
+  const { paragraphs, headings, title, marks } = format === 'md' ? parseMarkdown(text) : parseTxt(text);
   return {
     title,
     paragraphs,
     headings,
+    marks,
     chapters: buildChapters(paragraphs, headings, title ?? fallbackTitle),
   };
 }
@@ -70,6 +73,7 @@ interface Blocks {
   paragraphs: string[];
   headings: number[];
   title: string | null;
+  marks: Record<number, InlineMark[]>;
 }
 
 /** Joins hard-wrapped lines: no space between CJK text, a single space otherwise. */
@@ -99,7 +103,7 @@ function parseTxt(text: string): Blocks {
     if (isTxtHeading(unit)) headings.push(paragraphs.length);
     paragraphs.push(unit);
   }
-  return { paragraphs, headings, title: null };
+  return { paragraphs, headings, title: null, marks: {} };
 }
 
 const SENTENCE_END = /[。！？!?.…”」』"'）)：:；;]$/;
@@ -126,32 +130,122 @@ function isTxtHeading(line: string): boolean {
   return line.length <= MAX_TXT_HEADING_LENGTH && TXT_CHAPTER_LINE.test(line);
 }
 
-/** Strips inline markdown syntax, keeping the visible text. */
+export type MarkKind = 'b' | 'i';
+/** Inline style over [start, end) of a paragraph's plain text. */
+export type InlineMark = [start: number, end: number, kind: MarkKind];
+
+export interface InlineText {
+  text: string;
+  marks: InlineMark[];
+}
+
+const isSpace = (c: string | undefined) => c === undefined || /\s/.test(c);
+const isWordChar = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+
+/**
+ * Parses inline markdown into plain text plus bold/italic ranges. Links keep their text; images,
+ * html tags and code/strikethrough markers are dropped. Unmatched `*`/`_` stay as literal text.
+ */
+export function parseInlineMarkdown(source: string): InlineText {
+  const s = source
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '');
+
+  let out = '';
+  const marks: InlineMark[] = [];
+  const open: { char: string; size: 1 | 2; pos: number }[] = [];
+
+  for (let i = 0; i < s.length; ) {
+    const c = s[i];
+    if (c === '\\' && /[\\`*_{}[\]()#+\-.!>~|]/.test(s[i + 1] ?? '')) {
+      out += s[i + 1];
+      i += 2;
+      continue;
+    }
+    if (c === '`') {
+      const end = s.indexOf('`', i + 1);
+      if (end > i) {
+        out += s.slice(i + 1, end);
+        i = end + 1;
+        continue;
+      }
+    }
+    if (c === '~' && s[i + 1] === '~') {
+      i += 2;
+      continue;
+    }
+    if (c === '*' || c === '_') {
+      let run = 0;
+      while (s[i + run] === c) run++;
+      const before = s[i - 1];
+      const after = s[i + run];
+      i += run;
+      if (c === '_' && isWordChar(before) && isWordChar(after)) {
+        out += c.repeat(run); // snake_case
+        continue;
+      }
+      let left = run;
+      if (!isSpace(before)) {
+        // Close matching openers, innermost first (handles ***both***).
+        while (left > 0 && open.length && open.at(-1)!.char === c && open.at(-1)!.size <= left) {
+          const o = open.pop()!;
+          left -= o.size;
+          if (out.length > o.pos) marks.push([o.pos, out.length, o.size === 2 ? 'b' : 'i']);
+        }
+      }
+      if (left > 0 && !isSpace(after)) {
+        while (left > 0) {
+          const size = left >= 2 ? 2 : 1;
+          open.push({ char: c, size, pos: out.length });
+          left -= size;
+        }
+      }
+      out += c.repeat(left);
+      continue;
+    }
+    out += c;
+    i++;
+  }
+
+  // Unclosed openers become literal text again.
+  for (let k = open.length - 1; k >= 0; k--) {
+    const o = open[k];
+    out = out.slice(0, o.pos) + o.char.repeat(o.size) + out.slice(o.pos);
+    for (const m of marks) {
+      if (m[0] >= o.pos) m[0] += o.size;
+      if (m[1] > o.pos) m[1] += o.size;
+    }
+  }
+
+  const lead = out.length - out.trimStart().length;
+  const text = out.trim();
+  const shifted = marks
+    .map(([a, b, k]): InlineMark => [Math.max(0, a - lead), Math.min(text.length, b - lead), k])
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  return { text, marks: shifted };
+}
+
+/** Inline markdown → visible text only. */
 export function stripInlineMarkdown(s: string): string {
-  return s
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '') // images
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links
-    .replace(/<[^>]+>/g, '') // inline html
-    .replace(/`([^`]*)`/g, '$1') // code
-    .replace(/(\*\*|__)(.+?)\1/g, '$2') // bold
-    .replace(/(^|[^\p{L}\p{N}*_])([*_])(?!\s)(.+?)(?<!\s)\2(?![\p{L}\p{N}])/gu, '$1$3') // italics
-    .replace(/~~(.+?)~~/g, '$1') // strikethrough
-    .replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1') // escapes
-    .trim();
+  return parseInlineMarkdown(s).text;
 }
 
 function parseMarkdown(text: string): Blocks {
   const paragraphs: string[] = [];
   const headings: number[] = [];
+  const marks: Record<number, InlineMark[]> = {};
   let title: string | null = null;
   let buffer: string[] = [];
   let inFence = false;
 
   const push = (s: string, heading = false) => {
-    const clean = stripInlineMarkdown(s);
-    if (!clean) return;
+    const inline = parseInlineMarkdown(s);
+    if (!inline.text) return;
     if (heading) headings.push(paragraphs.length);
-    paragraphs.push(clean);
+    else if (inline.marks.length) marks[paragraphs.length] = inline.marks;
+    paragraphs.push(inline.text);
   };
   const flush = () => {
     if (buffer.length) push(joinLines(buffer));
@@ -205,7 +299,7 @@ function parseMarkdown(text: string): Blocks {
     if (line) buffer.push(line);
   }
   flush();
-  return { paragraphs, headings, title };
+  return { paragraphs, headings, title, marks };
 }
 
 /**

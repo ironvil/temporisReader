@@ -7,7 +7,7 @@
  */
 import { detectLanguage } from '../languages';
 import { readJson, readText, removeDir, writeJson, writeText } from '../storage';
-import { decodeText, formatFromFileName, parseBook, PARSER_VERSION, type BookFormat, type Chapter, type ParsedBook } from './parse';
+import { decodeText, formatFromFileName, parseBook, PARSER_VERSION, type BookFormat, type Chapter, type InlineMark, type ParsedBook } from './parse';
 
 export interface Progress {
   chapter: number;
@@ -27,6 +27,8 @@ export interface BookIndex {
   /** Start offset of each paragraph in content.txt. */
   paragraphOffsets: number[];
   headings: number[];
+  /** Bold/italic ranges for paragraphs that have any. */
+  marks: Record<number, InlineMark[]>;
   chapters: Chapter[];
 }
 
@@ -48,6 +50,7 @@ export interface OpenBook {
   index: BookIndex;
   content: string;
   paragraph(i: number): string;
+  marks(i: number): InlineMark[];
   isHeading(i: number): boolean;
 }
 
@@ -82,7 +85,7 @@ export function buildIndex(parsed: ParsedBook): { content: string; index: BookIn
   }
   return {
     content: parsed.paragraphs.join('\n'),
-    index: { version: PARSER_VERSION, paragraphOffsets, headings: parsed.headings, chapters: parsed.chapters },
+    index: { version: PARSER_VERSION, paragraphOffsets, headings: parsed.headings, marks: parsed.marks, chapters: parsed.chapters },
   };
 }
 
@@ -153,6 +156,7 @@ export async function openBook(id: string): Promise<OpenBook> {
     index,
     content: text,
     paragraph: (i) => text.slice(paragraphOffsets[i], i + 1 < paragraphOffsets.length ? paragraphOffsets[i + 1] - 1 : text.length),
+    marks: (i) => index.marks[i] ?? [],
     isHeading: (i) => headingSet.has(i),
   };
 }

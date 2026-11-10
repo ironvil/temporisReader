@@ -5,7 +5,9 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Imports `.txt` and `.md` files (UTF-8, UTF-16 or GB18030). On import, the text is split into paragraphs and chapters and an index is stored.
 - Paginated reading using CSS columns, with swipe or button navigation and a page / pages-in-chapter indicator.
 - Progress is saved as chapter, paragraph, word (and character offset for exact restore).
-- Dictionaries are downloaded at runtime from Settings and are never bundled in the APK. Chinese uses CC-CEDICT.
+- Languages are added in Settings → Languages, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT.
+- Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.
+- Markdown bold and italics are rendered.
 
 ## Layout
 
@@ -18,10 +20,11 @@ src/
   languages/types.ts    LanguageModule + Dictionary interfaces
   languages/index.ts    language registry
   languages/zh/         Chinese: CC-CEDICT download/parse, pinyin, popup rendering
+  segmentation/         WordSegmenter interface; dictionary-based and Intl (ICU) implementations
   ui/                   library and settings screens
 ```
 
-To add a language, implement `LanguageModule` (and one or more `Dictionary`s) under `src/languages/<id>/` and register it in `src/languages/index.ts`.
+To add a language, implement `LanguageModule` (with a `WordSegmenter` and one or more `Dictionary`s) under `src/languages/<id>/` and register it in `src/languages/index.ts`.
 
 ## Toolchain
 

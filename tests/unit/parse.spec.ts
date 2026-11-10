@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { buildIndex } from '../../src/books/library';
-import { buildChapters, decodeText, formatFromFileName, joinLines, parseBook, stripInlineMarkdown } from '../../src/books/parse';
+import { buildChapters, decodeText, formatFromFileName, joinLines, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '../../src/books/parse';
 
 test.describe('txt parsing', () => {
   test('one paragraph per line with Chinese chapter headings', () => {
@@ -81,6 +81,43 @@ test.describe('markdown parsing', () => {
 
   test('strips inline markdown but keeps snake_case', () => {
     expect(stripInlineMarkdown('a_b_c and _it_ and ![img](x.png)`code`')).toBe('a_b_c and it and code');
+  });
+});
+
+test.describe('inline markdown', () => {
+  test('bold, italic and both', () => {
+    expect(parseInlineMarkdown('a **bold** b *it* c ***both*** d')).toEqual({
+      text: 'a bold b it c both d',
+      marks: [
+        [2, 6, 'b'],
+        [9, 11, 'i'],
+        [14, 18, 'i'],
+        [14, 18, 'b'],
+      ],
+    });
+  });
+
+  test('underscores, but not inside words', () => {
+    expect(parseInlineMarkdown('__b__ _i_ snake_case_name')).toEqual({ text: 'b i snake_case_name', marks: [[0, 1, 'b'], [2, 3, 'i']] });
+  });
+
+  test('CJK emphasis without spaces', () => {
+    expect(parseInlineMarkdown('她的**头发**是*白金色*的')).toEqual({ text: '她的头发是白金色的', marks: [[2, 4, 'b'], [5, 8, 'i']] });
+  });
+
+  test('unmatched and spaced markers stay literal', () => {
+    expect(parseInlineMarkdown('5 * 3 = 15 and **open')).toEqual({ text: '5 * 3 = 15 and **open', marks: [] });
+    expect(parseInlineMarkdown('**a** and *b')).toEqual({ text: 'a and *b', marks: [[0, 1, 'b']] });
+  });
+
+  test('escapes, code and links', () => {
+    expect(parseInlineMarkdown('\\*not\\* `*code*` [**link**](u)')).toEqual({ text: '*not* *code* link', marks: [[13, 17, 'b']] });
+  });
+
+  test('marks are stored per paragraph; headings stay plain', () => {
+    const book = parseBook('# **Title**\n\nplain\n\nsome *style*', 'md', 'X');
+    expect(book.paragraphs).toEqual(['Title', 'plain', 'some style']);
+    expect(book.marks).toEqual({ 2: [[5, 10, 'i']] });
   });
 });
 
