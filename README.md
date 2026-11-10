@@ -22,4 +22,6 @@ npm run dev     # web dev server (file picker works; Filesystem uses a web fallb
 npm run sync    # build web assets and copy them into the Android project
 npm run apk     # sync + build debug APK -> android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+npm test        # Playwright tests against the production web build (mobile Chrome)
+npm run test:ui # same, in Playwright's interactive UI
 ```
