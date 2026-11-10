@@ -2,35 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
     <title>Temporis Reader</title>
-    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main>
-      <h1>Hello, Capacitor 👋</h1>
-      <p id="platform"></p>
-
-      <section>
-        <h2>Open a file from the device</h2>
-        <label class="button">
-          Choose file…
-          <input id="picker" type="file" hidden />
-        </label>
-        <p id="file-meta" class="meta"></p>
-      </section>
-
-      <section>
-        <h2>App storage (Filesystem plugin)</h2>
-        <div class="row">
-          <button id="write">Write hello.txt</button>
-          <button id="read">Read hello.txt</button>
-        </div>
-        <p id="fs-status" class="meta"></p>
-      </section>
-
-      <pre id="output">File contents will appear here.</pre>
-    </main>
-    <script type="module" src="/src/main.js"></script>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
