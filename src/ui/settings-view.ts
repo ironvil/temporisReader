@@ -32,10 +32,17 @@ export class SettingsView {
     return !this.root.hidden;
   }
 
-  async show(): Promise<void> {
+  /** `focusLanguage`: scroll to (and briefly highlight) that language's card. */
+  async show(focusLanguage?: string): Promise<void> {
     // Render before showing so stale controls from the last visit are never on screen.
     await this.render();
     this.root.hidden = false;
+    if (focusLanguage) {
+      const card = this.content.querySelector<HTMLElement>(`[data-language="${focusLanguage}"]`);
+      card?.scrollIntoView({ block: 'center' });
+      card?.classList.add('focus-flash');
+      setTimeout(() => card?.classList.remove('focus-flash'), 1600);
+    }
   }
 
   hide(): void {

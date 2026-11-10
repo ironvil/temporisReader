@@ -34,7 +34,7 @@ async function main() {
     show('library');
     await library.refresh();
   };
-  const openSettings = () => void settings.show();
+  const openSettings = (language?: string) => void settings.show(language);
   const closeSettings = () => {
     settings.hide();
     if (current === 'library') void library.refresh();
@@ -46,7 +46,14 @@ async function main() {
   };
 
   const library = new LibraryView({ onOpen: (id) => void openReader(id), onEdit: openEditor, onOpenSettings: openSettings });
-  const reader = new Reader({ onExit: () => void showLibrary(), onOpenSettings: openSettings });
+  const reader = new Reader({
+    onExit: () => void showLibrary(),
+    onOpenSettings: openSettings,
+    onEditBook: async (id) => {
+      await showLibrary();
+      openEditor(id);
+    },
+  });
   const settings = new SettingsView({ onClose: closeSettings });
   const editor = new BookEditorView({
     onClose: closeEditor,

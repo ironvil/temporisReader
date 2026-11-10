@@ -7,11 +7,13 @@ import {
   removeChapter,
   renameBook,
   renameChapter,
+  setBookLanguage,
   titleFromFileName,
   type BookMeta,
   type SourceMeta,
 } from '../books/library';
 import { formatFromFileName, type BookFormat } from '../books/parse';
+import { getLanguage, languages } from '../languages';
 import { getSettings, updateSettings } from '../settings';
 import { field, openDialog } from './dialog';
 import { el, toast } from './dom';
@@ -71,6 +73,14 @@ export class BookEditorView {
     const title = el('input', { type: 'text', value: book.title, autocomplete: 'off', class: 'title-input' });
     title.addEventListener('change', () => this.run(() => renameBook(book.id, title.value)));
 
+    const language = el(
+      'select',
+      { 'aria-label': 'Language' },
+      ...languages.map((l) => el('option', { value: l.id, selected: book.language === l.id }, `${l.name} · ${l.nativeName}`)),
+      el('option', { value: '', selected: !getLanguage(book.language) }, 'Other (not supported)'),
+    );
+    language.addEventListener('change', () => this.run(() => setBookLanguage(book.id, language.value || null)));
+
     const addButton = el('button', { type: 'button', class: 'button wide' }, 'Add chapter');
     addButton.addEventListener('click', () => this.openAddChapter(book));
 
@@ -80,6 +90,7 @@ export class BookEditorView {
 
     this.content.replaceChildren(
       field('Title', title),
+      field('Language', language),
       el('h2', {}, `Chapters (${book.sources.length})`),
       list,
       addButton,

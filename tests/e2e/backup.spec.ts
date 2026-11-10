@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { devices, expect, test, type Browser, type Page } from '@playwright/test';
-import { addChinese, chineseBook, importBook, nextPage, openFirstBook } from './helpers';
+import { addChinese, chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook } from './helpers';
 
 async function freshPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...devices['Pixel 7'], baseURL: test.info().project.use.baseURL });
@@ -106,6 +106,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   // Reading position restored.
   await fresh.locator('.book-open', { hasText: '猫头鹰' }).click();
   await expect(fresh.locator('.page-count')).toHaveText(`3 / ${totalPages}`);
+  await dismissLanguageReminder(fresh); // Chinese isn't re-added on the fresh install
   await fresh.getByRole('button', { name: 'Library' }).click();
 
   // Composed book: chapter order, titles and markdown survived.
@@ -114,6 +115,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
     .poll(() => fresh.locator('.chapter-row .chapter-main input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)))
     .toEqual(['乙章', '甲章']);
   await fresh.getByRole('button', { name: 'Read' }).click();
+  await dismissLanguageReminder(fresh);
   await expect(fresh.locator('.chapter-title')).toHaveText('乙章');
   await fresh.keyboard.press('ArrowRight');
   await expect(fresh.locator('.page-flow strong')).toHaveText('头发');

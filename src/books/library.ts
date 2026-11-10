@@ -72,6 +72,8 @@ export interface BookMeta {
   progress: Progress | null;
   /** Bumped whenever the book's content index is rebuilt (invalidates derived caches). */
   contentVersion?: number;
+  /** True once the user picked the language in the editor; detection then leaves it alone. */
+  languageChosen?: boolean;
 }
 
 export interface OpenBook {
@@ -217,7 +219,7 @@ async function rebuild(meta: BookMeta): Promise<{ content: string; index: BookIn
   meta.contentVersion = (meta.contentVersion ?? 0) + 1;
   meta.chapterCount = built.index.chapters.length;
   meta.paragraphCount = built.index.paragraphOffsets.length;
-  meta.language = detectLanguage(built.content.slice(0, 5000));
+  if (!meta.languageChosen) meta.language = detectLanguage(built.content.slice(0, 5000));
   meta.progress = remapProgress(meta.progress, built);
   await persist();
   return built;
@@ -368,6 +370,16 @@ export function renameChapter(bookId: string, sourceId: string, title: string): 
     if (!source || !title.trim() || source.title === title.trim()) return;
     source.title = title.trim();
     await rebuild(meta);
+  });
+}
+
+/** Sets the book's language (null = not supported / none) and stops auto-detection from changing it. */
+export function setBookLanguage(bookId: string, language: string | null): Promise<void> {
+  return serial(bookId, async () => {
+    const meta = await find(bookId);
+    meta.language = language;
+    meta.languageChosen = true;
+    await persist();
   });
 }
 

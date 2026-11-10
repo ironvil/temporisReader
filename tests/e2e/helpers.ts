@@ -44,6 +44,18 @@ export async function importBook(page: Page, name: string, content: string): Pro
 export async function openFirstBook(page: Page): Promise<void> {
   await page.locator('.book-open').first().click();
   await expect(page.locator('.page-count')).toHaveText(/^\d+ \/ \d+$/);
+  await dismissLanguageReminder(page);
+}
+
+/** Matches the "Add <language>?" reminder and the unsupported-language notice shown when a book opens. */
+export const LANGUAGE_REMINDER = /^(Add .+\?|Lookups aren’t available)$/;
+
+/** Waits for the reader's language check and closes its reminder/notice with "Not now" if one appeared. */
+export async function dismissLanguageReminder(page: Page): Promise<void> {
+  await expect(page.locator('.reader[data-language-check="done"]')).toBeAttached();
+  const reminder = page.getByRole('dialog', { name: LANGUAGE_REMINDER });
+  if (await reminder.count()) await reminder.getByRole('button', { name: 'Not now' }).click();
+  await expect(reminder).toHaveCount(0);
 }
 
 /** Settings → Languages → Chinese → Add, serving a fake CC-CEDICT. */

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, chineseBook, importBook, openFirstBook, tapText } from './helpers';
+import { addChinese, chineseBook, dismissLanguageReminder, importBook, openFirstBook, tapText } from './helpers';
 
 const todayIn = (page: Page) =>
   page.evaluate(() => {
@@ -48,6 +48,7 @@ test('status row stays visible when long entries scroll', async ({ page }) => {
   await importBook(page, 'le.txt', '第一章\n她来了。\n');
   await page.locator('.book-open', { hasText: 'le' }).click();
   await expect(page.locator('.book-title')).toHaveText('le');
+  await dismissLanguageReminder(page);
   await tapText(page, '了');
   await expect(page.locator('.defs li')).toHaveCount(30);
   const visible = await page.evaluate(() => {

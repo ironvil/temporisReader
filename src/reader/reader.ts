@@ -96,7 +96,9 @@ const fallbackSegmenter = new IntlWordSegmenter();
 
 export interface ReaderCallbacks {
   onExit(): void;
-  onOpenSettings(): void;
+  /** `language`: scroll Settings to that language's card. */
+  onOpenSettings(language?: string): void;
+  onEditBook(id: string): void;
 }
 
 export class Reader {
@@ -223,9 +225,56 @@ export class Reader {
     if (saved && saved.chapter === chapter) this.goTo(this.positionFromProgress(saved));
     else this.setPage(0);
     this.startPageVisit();
+    void this.remindAboutLanguage(book);
+  }
+
+  /**
+   * Every time a book opens: if its language's dictionaries aren't installed, remind the user to
+   * add the language; if its language isn't supported (or wasn't detected), say lookups aren't
+   * available and offer to change the language.
+   */
+  private async remindAboutLanguage(book: OpenBook): Promise<void> {
+    this.root.dataset.languageCheck = 'pending';
+    try {
+      const lang = this.lang;
+      if (!lang) {
+        openDialog({
+          title: 'Lookups aren’t available',
+          content: [
+            el(
+              'p',
+              {},
+              'This book’s language isn’t supported or couldn’t be detected, so words can’t be looked up. If it is in a supported language, set it in the book editor.',
+            ),
+          ],
+          cancelLabel: 'Not now',
+          confirmLabel: 'Change language',
+          onConfirm: () => this.callbacks.onEditBook(book.meta.id),
+        });
+        return;
+      }
+      const states = await Promise.all(lang.dictionaries.map((d) => d.state()));
+      if (states.every((s) => s.installed) || this.book !== book) return;
+      openDialog({
+        title: `Add ${lang.name}?`,
+        content: [
+          el(
+            'p',
+            {},
+            `This book is in ${lang.name}, but ${lang.name} hasn’t been added yet. Word lookup, highlighting and known-word stats need its dictionary. Add it in Settings → Languages.`,
+          ),
+        ],
+        cancelLabel: 'Not now',
+        confirmLabel: 'Open settings',
+        onConfirm: () => this.callbacks.onOpenSettings(lang.id),
+      });
+    } finally {
+      this.root.dataset.languageCheck = 'done';
+    }
   }
 
   async close(): Promise<void> {
+    delete this.root.dataset.languageCheck;
     this.unsubscribeKnown?.();
     this.unsubscribeKnown = null;
     this.clearWordHighlights();
@@ -880,7 +929,7 @@ export class Reader {
   private renderNotice(result: LookupResult): HTMLElement {
     const missing = result.notice?.kind === 'missing-dictionary';
     const settingsButton = missing ? el('button', { type: 'button', class: 'button' }, 'Open settings') : null;
-    settingsButton?.addEventListener('click', () => this.callbacks.onOpenSettings());
+    settingsButton?.addEventListener('click', () => this.callbacks.onOpenSettings(this.lang?.id));
     return el(
       'div',
       { class: 'lookup-notice' },

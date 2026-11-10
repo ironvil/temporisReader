@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { chineseBook, importBook, nextPage, openFirstBook, pageIndicator } from './helpers';
+import { chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook, pageIndicator } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -45,6 +45,7 @@ async function expectChapters(page: Page, titles: string[]) {
 async function read(page: Page) {
   await page.getByRole('button', { name: 'Read' }).click();
   await expect(page.locator('.page-count')).toHaveText(/^\d+ \/ \d+$/);
+  await dismissLanguageReminder(page);
 }
 
 const longChapter = (word: string) => Array.from({ length: 30 }, () => `${word}今天早上，阳光从高高的窗户里斜斜地照进来，落在桌子上。`).join('\n');

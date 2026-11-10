@@ -7,7 +7,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, importBook, nextPage, openFirstBook, swipe, tapText } from './helpers';
+import { addChinese, dismissLanguageReminder, importBook, nextPage, openFirstBook, swipe, tapText } from './helpers';
 
 const TODAY = '2026-11-10';
 const MULTI_PAGE = ['第一章', ...Array.from({ length: 40 }, () => '今天早上，阳光很好。'), '她对镜子说。'].join('\n');
@@ -203,6 +203,7 @@ async function firstCharOfPage2(page: Page): Promise<number> {
 async function openBookNamed(page: Page, title: string) {
   await page.locator('.book-open', { hasText: title }).click();
   await expect(page.locator('.book-title')).toHaveText(title);
+  await dismissLanguageReminder(page);
 }
 
 test('a word split by the page break belongs to the earlier page', async ({ page }) => {
