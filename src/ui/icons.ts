@@ -4,6 +4,8 @@ const paths = {
   settings:
     '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   edit: '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   up: '<path d="M18 15l-6-6-6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>',

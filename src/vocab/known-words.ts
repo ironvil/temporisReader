@@ -107,8 +107,15 @@ export class KnownWords {
   private loading: Promise<void> | null = null;
   private loaded = false;
   private writeChain: Promise<void> = Promise.resolve();
+  private readonly listeners = new Set<() => void>();
 
   constructor(readonly language: string) {}
+
+  /** Called after any change (marking, import, replace). Returns an unsubscribe function. */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 
   private get path() {
     return `known-words/${this.language}.json`;
@@ -117,12 +124,14 @@ export class KnownWords {
   load(): Promise<void> {
     this.loading ??= readText(this.path).then((text) => {
       this.loaded = true;
-      if (text === null) return;
-      try {
-        this.file = parseKnownWords(text);
-      } catch (err) {
-        console.error(`Known words for ${this.language} are unreadable`, err);
+      if (text !== null) {
+        try {
+          this.file = parseKnownWords(text);
+        } catch (err) {
+          console.error(`Known words for ${this.language} are unreadable`, err);
+        }
       }
+      this.listeners.forEach((l) => l());
     });
     return this.loading;
   }
@@ -186,6 +195,7 @@ export class KnownWords {
   }
 
   private save(): Promise<void> {
+    this.listeners.forEach((l) => l());
     const text = serializeKnownWords(this.file);
     this.writeChain = this.writeChain.then(() => writeText(this.path, text)).catch((err) => console.error('Saving known words failed', err));
     return this.writeChain;

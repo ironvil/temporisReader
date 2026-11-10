@@ -70,6 +70,8 @@ export interface BookMeta {
   chapterCount: number;
   paragraphCount: number;
   progress: Progress | null;
+  /** Bumped whenever the book's content index is rebuilt (invalidates derived caches). */
+  contentVersion?: number;
 }
 
 export interface OpenBook {
@@ -212,6 +214,7 @@ async function rebuild(meta: BookMeta): Promise<{ content: string; index: BookIn
   await writeText(`${dir(meta.id)}/content.txt`, built.content);
   await writeJson(`${dir(meta.id)}/index.json`, built.index);
 
+  meta.contentVersion = (meta.contentVersion ?? 0) + 1;
   meta.chapterCount = built.index.chapters.length;
   meta.paragraphCount = built.index.paragraphOffsets.length;
   meta.language = detectLanguage(built.content.slice(0, 5000));
@@ -377,7 +380,16 @@ export function renameBook(bookId: string, title: string): Promise<void> {
   });
 }
 
+/** Opens a book for reading (marks it as last opened). */
 export async function openBook(id: string): Promise<OpenBook> {
+  const book = await loadBook(id);
+  book.meta.lastOpenedAt = Date.now();
+  void persist();
+  return book;
+}
+
+/** Loads a book's content and index without counting as opening it. */
+export async function loadBook(id: string): Promise<OpenBook> {
   const meta = await find(id);
   let index = await readJson<BookIndex>(`${dir(id)}/index.json`);
   let content = await readText(`${dir(id)}/content.txt`);
@@ -386,9 +398,6 @@ export async function openBook(id: string): Promise<OpenBook> {
     ({ index, content } = await serial(id, () => rebuild(meta)));
   }
   if (!index.chapters.length) throw new Error('This book has no chapters yet');
-
-  meta.lastOpenedAt = Date.now();
-  void persist();
 
   const { paragraphOffsets } = index;
   const markMap = index.marks;

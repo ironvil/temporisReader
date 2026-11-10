@@ -78,6 +78,11 @@ export class CedictDictionary implements Dictionary, WordList {
     return this.index?.maxLengthByFirstChar.get(firstChar) ?? 0;
   }
 
+  /** Identifies the loaded data, or null when not loaded. */
+  get dataKey(): string | null {
+    return this.index ? `${this.index.entryCount}:${this.index.date ?? ''}` : null;
+  }
+
   private setIndex(index: CedictIndex | null) {
     this.index = index;
     this._revision++;

@@ -39,6 +39,11 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
     return this.cedict.isReady();
   }
 
+  segmentationKey(): string | null {
+    const key = this.cedict.dataKey;
+    return key && `zh:cedict:${key}`;
+  }
+
   isTrackable(word: string): boolean {
     return ALL_HAN.test(word) && this.cedict.has(word);
   }

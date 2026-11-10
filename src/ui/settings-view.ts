@@ -81,12 +81,24 @@ export class SettingsView {
     );
     theme.addEventListener('change', () => void updateSettings({ theme: theme.value as Theme }));
 
+    const highlight = el('input', { type: 'checkbox', checked: settings.highlightWords });
+    highlight.addEventListener('change', () => void updateSettings({ highlightWords: highlight.checked }));
+
     return el(
       'div',
       { class: 'card' },
       el('div', { class: 'setting-row' }, el('span', {}, 'Text size'), el('div', { class: 'stepper' }, smaller, size, larger)),
       preview,
       el('div', { class: 'setting-row' }, el('span', {}, 'Theme'), theme),
+      el('label', { class: 'checkbox' }, highlight, el('span', {}, 'Highlight words you don’t know yet')),
+      el(
+        'p',
+        { class: 'setting-help' },
+        el('span', { class: 'legend new' }, 'new'),
+        ' never marked · ',
+        el('span', { class: 'legend learning' }, 'learning'),
+        ' levels 0–2',
+      ),
     );
   }
 

@@ -83,6 +83,11 @@ export interface LanguageModule<Entry = unknown> {
    */
   isTrackable(word: string): boolean;
   /**
+   * Identifies the data segmentation and isTrackable depend on (e.g. dictionary version), or null
+   * while it isn't loaded. Cached per-book word counts are rebuilt when it changes.
+   */
+  segmentationKey(): string | null;
+  /**
    * Finds the word at `index` in `paragraph` and looks it up.
    * Returns null when the tapped character isn't part of a word (punctuation, spaces…).
    */

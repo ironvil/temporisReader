@@ -15,6 +15,8 @@ import { el } from '../ui/dom';
 import { iconButton } from '../ui/icons';
 import { openDialog } from '../ui/dialog';
 import { toast } from '../ui/dom';
+import { getSettings } from '../settings';
+import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
 import { KNOWN, knownWords, LEVELS, wordsToMarkKnown, type Level } from '../vocab/known-words';
 import { LookupPopup } from './popup';
 import { chapterStartOffsets, estimatePage, globalOffset, guessCharsPerPage, locateOffset, type Located } from './scrub';
@@ -136,6 +138,7 @@ export class Reader {
   private cachedCharsPerPage: number | null = null;
   private pendingScrub: Located | null = null;
   private scrubTimer: number | undefined;
+  private unsubscribeKnown: (() => void) | null = null;
 
   constructor(private readonly callbacks: ReaderCallbacks) {
     this.bookTitle = el('div', { class: 'book-title' });
@@ -176,6 +179,7 @@ export class Reader {
         { class: 'bar top' },
         iconButton('back', 'Library', () => callbacks.onExit()),
         el('div', { class: 'bar-title' }, this.bookTitle, this.chapterTitle),
+        iconButton('list', 'Chapters', () => this.openChapterList()),
         iconButton('settings', 'Settings', () => callbacks.onOpenSettings()),
       ),
       pageWrap,
@@ -186,6 +190,7 @@ export class Reader {
     new ResizeObserver(() => this.scheduleRelayout()).observe(this.area);
     onSettingsChange((_, changed) => {
       if (changed.fontSize !== undefined) this.relayout();
+      if (changed.highlightWords !== undefined) this.refreshWordHighlights();
     });
     document.addEventListener('keydown', (e) => {
       if (this.root.hidden || !this.book || document.querySelector('dialog[open]')) return;
@@ -204,8 +209,12 @@ export class Reader {
   open(book: OpenBook): void {
     this.book = book;
     this.lang = getLanguage(book.meta.language);
-    for (const dictionary of this.lang?.dictionaries ?? []) void dictionary.ensureLoaded();
-    if (this.lang) void knownWords(this.lang.id).load();
+    for (const dictionary of this.lang?.dictionaries ?? []) void dictionary.ensureLoaded().then(() => this.refreshWordHighlights());
+    if (this.lang) {
+      const store = knownWords(this.lang.id);
+      this.unsubscribeKnown = store.onChange(() => this.refreshWordHighlights());
+      void store.load();
+    }
     this.bookTitle.textContent = book.meta.title;
 
     const saved = book.meta.progress;
@@ -217,6 +226,9 @@ export class Reader {
   }
 
   async close(): Promise<void> {
+    this.unsubscribeKnown?.();
+    this.unsubscribeKnown = null;
+    this.clearWordHighlights();
     this.cancelScrub();
     this.scrubber.hidden = true;
     this.indicator.setAttribute('aria-expanded', 'false');
@@ -399,7 +411,11 @@ export class Reader {
 
   /** Words that start on `page`, in reading order (a word split by the page break belongs to the earlier page). */
   private wordsOnPage(page: number): string[] {
-    const words: string[] = [];
+    return this.wordSpansOnPage(page).map((w) => w.text);
+  }
+
+  private wordSpansOnPage(page: number): { block: HTMLElement; start: number; end: number; text: string }[] {
+    const words: { block: HTMLElement; start: number; end: number; text: string }[] = [];
     const start = this.firstPositionOnPage(page);
     for (let b = start.paragraph; b < this.blocks.length; b++) {
       const block = this.blocks[b];
@@ -410,27 +426,127 @@ export class Reader {
         const p = this.pageOfOffset(block, span.start);
         if (p < page) continue;
         if (p > page) break;
-        words.push(text.slice(span.start, span.end));
+        words.push({ block, start: span.start, end: span.end, text: text.slice(span.start, span.end) });
       }
     }
     return words;
   }
 
+  /** Lists the words as toggles (all selected); only selected words are marked. */
   private offerMarkKnown(language: string, words: string[]): void {
     const n = words.length;
-    openDialog({
+    const selected = new Set(words);
+    const chips = words.map((w) => {
+      const chip = el('button', { type: 'button', class: 'word-chip', 'aria-pressed': 'true' }, w);
+      chip.addEventListener('click', () => {
+        if (selected.has(w)) selected.delete(w);
+        else selected.add(w);
+        chip.setAttribute('aria-pressed', String(selected.has(w)));
+        updateConfirm();
+      });
+      return chip;
+    });
+    const dialog = openDialog({
       title: 'Mark words as known?',
       content: [
-        el('p', {}, `${n} ${n === 1 ? 'word' : 'words'} on the page you just read ${n === 1 ? 'wasn’t' : 'weren’t'} looked up:`),
-        el('div', { class: 'word-chips', lang: this.lang?.htmlLang }, ...words.map((w) => el('span', { class: 'word-chip' }, w))),
+        el('p', {}, `${n} ${n === 1 ? 'word' : 'words'} on the page you just read ${n === 1 ? 'wasn’t' : 'weren’t'} looked up. Tap a word to leave it out.`),
+        el('div', { class: 'word-chips', lang: this.lang?.htmlLang }, ...chips),
       ],
       cancelLabel: 'Not now',
-      confirmLabel: 'Mark known',
+      confirmLabel: `Mark ${n} known`,
       onConfirm: async () => {
-        await knownWords(language).setMany(words, KNOWN);
-        toast(`Marked ${n} ${n === 1 ? 'word' : 'words'} as known`);
+        const chosen = words.filter((w) => selected.has(w));
+        if (!chosen.length) return;
+        await knownWords(language).setMany(chosen, KNOWN);
+        toast(`Marked ${chosen.length} ${chosen.length === 1 ? 'word' : 'words'} as known`);
       },
     });
+    const confirm = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const updateConfirm = () => {
+      confirm.textContent = `Mark ${selected.size} known`;
+      confirm.disabled = selected.size === 0;
+    };
+  }
+
+  // ── Highlighting words that aren't known yet ──────────────────────────────
+
+  /** Tints new (untracked) and learning (0–2) words on the current page, when enabled in settings. */
+  private refreshWordHighlights(): void {
+    this.clearWordHighlights();
+    const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
+    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+    const lang = this.lang;
+    if (!registry || !HighlightCtor || !lang || !this.book || this.root.hidden || !getSettings().highlightWords) return;
+    const store = knownWords(lang.id);
+    if (!lang.ready() || !store.isLoaded) return;
+
+    const fresh: Range[] = [];
+    const learning: Range[] = [];
+    for (const word of this.wordSpansOnPage(this.page)) {
+      if (!lang.isTrackable(word.text)) continue;
+      const level = store.level(word.text);
+      if (level === KNOWN) continue;
+      const range = this.charRange(word.block, word.start, word.end);
+      if (range) (level === undefined ? fresh : learning).push(range);
+    }
+    registry.set('word-new', new HighlightCtor(...fresh));
+    registry.set('word-learning', new HighlightCtor(...learning));
+  }
+
+  private clearWordHighlights(): void {
+    const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
+    registry?.delete('word-new');
+    registry?.delete('word-learning');
+  }
+
+  // ── Chapter list ─────────────────────────────────────────────────────────
+
+  private openChapterList(): void {
+    const book = this.book;
+    if (!book) return;
+    const dialog = el('dialog', { class: 'dialog toc', 'aria-label': 'Chapters' });
+    const items = book.index.chapters.map((chapter, i) => {
+      const button = el(
+        'button',
+        { type: 'button', class: 'toc-item', 'aria-current': i === this.chapterIndex ? 'true' : undefined },
+        el('span', { class: 'toc-number' }, String(i + 1)),
+        el('span', { class: 'toc-title' }, chapter.title),
+        el('span', { class: 'toc-known', 'data-chapter': String(i) }),
+      );
+      button.addEventListener('click', () => {
+        dialog.close();
+        this.jumpToChapter(i);
+      });
+      return el('li', {}, button);
+    });
+    const close = iconButton('close', 'Close chapters', () => dialog.close());
+    dialog.append(el('div', { class: 'toc-head' }, el('h2', {}, 'Chapters'), close), el('ol', { class: 'toc-list' }, ...items));
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+    items[this.chapterIndex]?.scrollIntoView({ block: 'center' });
+    void this.fillChapterShares(book, dialog);
+  }
+
+  private async fillChapterShares(book: OpenBook, dialog: HTMLElement): Promise<void> {
+    const lang = this.lang;
+    if (!lang) return;
+    const store = knownWords(lang.id);
+    await store.load();
+    const counts = await bookWordCounts(book.meta.id, lang, book);
+    if (!counts) return;
+    counts.forEach((chapter, i) => {
+      const target = dialog.querySelector(`.toc-known[data-chapter="${i}"]`);
+      if (target) target.textContent = `${formatShare(knownShare([chapter], (w) => store.level(w)))} known`;
+    });
+  }
+
+  private jumpToChapter(index: number): void {
+    if (!this.book) return;
+    this.cancelScrub();
+    this.renderChapter(index);
+    this.setPage(0);
+    this.startPageVisit(); // not a page turn: no mark-known prompt
   }
 
   private setPage(page: number, animate = false, keep?: Position): void {
@@ -440,6 +556,7 @@ export class Reader {
     this.position = keep ?? this.firstPositionOnPage(this.page);
     this.updateChrome();
     this.syncScrubber();
+    this.refreshWordHighlights();
     this.scheduleSave();
   }
 
@@ -771,7 +888,10 @@ export class Reader {
   private highlight(range: Range): void {
     const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
     const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
-    if (registry && HighlightCtor) registry.set('lookup', new HighlightCtor(range));
+    if (!registry || !HighlightCtor) return;
+    const highlight = new HighlightCtor(range) as { priority: number };
+    highlight.priority = 1; // above the new/learning tints
+    registry.set('lookup', highlight);
   }
 
   private closeLookup(): void {

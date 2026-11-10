@@ -5,11 +5,13 @@ export type Theme = 'system' | 'light' | 'dark';
 export interface Settings {
   fontSize: number;
   theme: Theme;
+  /** Tint words in the text that aren't known yet (new / learning). Off by default. */
+  highlightWords: boolean;
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system' };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };

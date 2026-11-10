@@ -80,7 +80,7 @@ test('after 10 seconds on a page, turning offers its unlooked-up words and marks
   await expect(chips(page)).toHaveText(['今天', '早上', '阳光']);
   await expect(page.locator('.page-count')).toHaveText(/^2 \//);
 
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect(prompt(page)).toHaveCount(0);
   await expect(page.getByText('Marked 3 words as known')).toBeVisible();
   await expect.poll(() => storedKnownWords(page)).toEqual({
@@ -126,7 +126,7 @@ test('words looked up on the page are not offered', async ({ page }) => {
   await dwell(page, 10_000);
   await nextPage(page);
   await expect(chips(page)).toHaveText(['早上', '阳光']);
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect.poll(async () => (await storedKnownWords(page))?.words).toEqual({ 早上: [3, TODAY], 阳光: [3, TODAY] });
 });
 
@@ -138,7 +138,7 @@ test('a level set from the popup is kept, not overwritten by the prompt', async 
   await dwell(page, 10_000);
   await nextPage(page);
   await expect(chips(page)).toHaveText(['今天', '阳光']);
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect.poll(async () => (await storedKnownWords(page))?.words).toEqual({ 早上: [1, TODAY], 今天: [3, TODAY], 阳光: [3, TODAY] });
 });
 
@@ -147,7 +147,7 @@ test('known words are skipped and keep their dates; learning words become known'
   await dwell(page, 10_000);
   await nextPage(page);
   await expect(chips(page)).toHaveText(['早上', '阳光']);
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect.poll(() => storedKnownWords(page)).toEqual({
     version: 1,
     updated: TODAY,
@@ -177,7 +177,7 @@ test('only words from the page being left are offered (crossing into the next ch
   await nextPage(page);
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
   await expect(chips(page)).toHaveText(['今天', '阳光']); // not 镜子 from chapter 2
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect.poll(async () => (await storedKnownWords(page))?.words).toEqual({ 今天: [3, TODAY], 阳光: [3, TODAY] });
 });
 
@@ -275,7 +275,7 @@ test('the exported file after marking matches the known-words format', async ({ 
   await setUp(page, TWO_CHAPTERS, { known: { 镜子: [1, '2026-01-01'] } });
   await dwell(page, 10_000);
   await nextPage(page);
-  await prompt(page).getByRole('button', { name: 'Mark known' }).click();
+  await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect(page.getByText('Marked 2 words as known')).toBeVisible();
 
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -285,4 +285,33 @@ test('the exported file after marking matches the known-words format', async ({ 
   expect(text).toBe(
     ['{', '  "version": 1,', `  "updated": "${TODAY}",`, '  "words": {', '    "镜子": [1, "2026-01-01"],', `    "今天": [3, "${TODAY}"],`, `    "阳光": [3, "${TODAY}"]`, '  }', '}', ''].join('\n'),
   );
+});
+
+test('tapping a word in the prompt leaves it out', async ({ page }) => {
+  await setUp(page, MULTI_PAGE, { name: 'book.txt' });
+  await dwell(page, 10_000);
+  await nextPage(page);
+  await expect(prompt(page).getByRole('button', { name: 'Mark 3 known' })).toBeEnabled();
+  await chips(page).filter({ hasText: '早上' }).click();
+  await expect(chips(page).filter({ hasText: '早上' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(prompt(page).getByRole('button', { name: 'Mark 2 known' })).toBeEnabled();
+
+  // Toggling back on and off again works.
+  await chips(page).filter({ hasText: '阳光' }).click();
+  await chips(page).filter({ hasText: '阳光' }).click();
+  await expect(prompt(page).getByRole('button', { name: 'Mark 2 known' })).toBeEnabled();
+
+  await prompt(page).getByRole('button', { name: 'Mark 2 known' }).click();
+  await expect(page.getByText('Marked 2 words as known')).toBeVisible();
+  await expect.poll(() => storedKnownWords(page)).toEqual({ version: 1, updated: TODAY, words: { 今天: [3, TODAY], 阳光: [3, TODAY] } });
+});
+
+test('leaving every word out disables marking', async ({ page }) => {
+  await setUp(page, MULTI_PAGE, { name: 'book.txt' });
+  await dwell(page, 10_000);
+  await nextPage(page);
+  for (const w of ['今天', '早上', '阳光']) await chips(page).filter({ hasText: w }).click();
+  await expect(prompt(page).getByRole('button', { name: 'Mark 0 known' })).toBeDisabled();
+  await prompt(page).getByRole('button', { name: 'Not now' }).click();
+  expect(await storedKnownWords(page)).toBeNull();
 });
