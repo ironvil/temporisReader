@@ -10,12 +10,11 @@ import { getLanguage } from '../languages';
 import type { LanguageModule, LookupResult } from '../languages/types';
 import { IntlWordSegmenter } from '../segmentation/intl';
 import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentation/types';
-import { onSettingsChange } from '../settings';
+import { getSettings, onSettingsChange } from '../settings';
 import { el } from '../ui/dom';
 import { iconButton } from '../ui/icons';
 import { openDialog } from '../ui/dialog';
 import { toast } from '../ui/dom';
-import { getSettings } from '../settings';
 import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
 import { KNOWN, knownWords, LEVELS, wordsToMarkKnown, type Level } from '../vocab/known-words';
 import { LookupPopup } from './popup';
@@ -902,9 +901,18 @@ export class Reader {
     this.highlight(range);
     const anchor = range.getClientRects()[0] ?? range.getBoundingClientRect();
     if (!result.entries.length) return this.popup.show(this.renderNotice(result), anchor);
+    if (getSettings().downgradeOnLookup) await this.downgradeKnown(lang.id, result.headword);
+    if (seq !== this.lookupSeq) return;
     const status = await this.statusButtons(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
     this.popup.show(lang.renderEntries(result), anchor, result.source, status);
+  }
+
+  /** A known word that had to be looked up isn't really known: back to 2 (dated today). */
+  private async downgradeKnown(language: string, word: string): Promise<void> {
+    const store = knownWords(language);
+    await store.load();
+    if (store.level(word) === KNOWN) await store.set(word, 2);
   }
 
   /** 0 / 1 / 2 / ✓ buttons; the word's current level is highlighted. Tapping sets it and stamps today. */

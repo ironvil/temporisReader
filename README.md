@@ -13,6 +13,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Markdown bold and italics are rendered.
 - Known words per language: the lookup popup has 0 / 1 / 2 / ✓ buttons (✓ = 3, known); each tap records the level and today's date. Settings → Languages imports (merging, newer date wins; or replacing the list with an exact copy of the file) and exports the list as `known-words-<lang>-<date>.json` (`{version, updated, words: {word: [level, date]}}`) via the Android share sheet.
 - Turning forward after at least 10 s on a page offers to mark that page's words as known: words starting on the page that have a dictionary entry, weren't looked up during the visit, and aren't already known. Lookups reset on every page turn; going back never prompts.
+- Looking up a known (✓) word moves it back to 2 and stamps today (Settings → Reading; on by default). Tapping outside an open popup only closes it.
 
 ## Layout
 

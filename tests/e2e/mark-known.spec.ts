@@ -344,3 +344,68 @@ test('the prompt can be turned off in settings (on by default)', async ({ page }
   await nextPage(page);
   await expect(prompt(page)).toBeVisible();
 });
+
+test('no prompt when every word on the page was looked up', async ({ page }) => {
+  await setUp(page, MULTI_PAGE, { name: 'book.txt' });
+  for (const word of ['今天', '早上', '阳光']) {
+    await tapText(page, word);
+    await expect(page.locator('.lookup-popup .zh-hanzi')).toHaveText(word);
+  }
+  await dwell(page, 10_000);
+  await nextWithoutPrompt(page);
+  expect(await storedKnownWords(page)).toBeNull();
+});
+
+test('no prompt on a page with no dictionary words', async ({ page }) => {
+  await setUp(page, '# 一\n\n她说：“好。”\n\n# 二\n\n今天阳光。\n');
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
+  await dwell(page, 10_000);
+  await nextWithoutPrompt(page);
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
+  expect(await storedKnownWords(page)).toBeNull();
+});
+
+test.describe('looking up a known word moves it back to 2', () => {
+  const OLD = '2026-01-01';
+  const status = (page: Page) => page.locator('.lookup-popup .word-status');
+
+  test('on by default: ✓ becomes 2 dated today; other levels are left alone', async ({ page }) => {
+    await setUp(page, MULTI_PAGE, { name: 'book.txt', known: { 今天: [3, OLD], 早上: [1, OLD], 阳光: [0, OLD] } });
+    await tapText(page, '今天');
+    await expect(status(page).getByRole('button', { name: 'Level 2' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(status(page).getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(async () => (await storedKnownWords(page))?.words.今天).toEqual([2, TODAY]);
+
+    // Marking it known again from the popup sticks while the popup is open.
+    await status(page).getByRole('button', { name: 'Known' }).click();
+    await expect(status(page).getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await storedKnownWords(page))?.words.今天).toEqual([3, TODAY]);
+
+    await tapText(page, '早上');
+    await expect(status(page).getByRole('button', { name: 'Level 1' })).toHaveAttribute('aria-pressed', 'true');
+    await tapText(page, '阳光');
+    await expect(status(page).getByRole('button', { name: 'Level 0' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await storedKnownWords(page))?.words).toEqual({ 今天: [3, TODAY], 早上: [1, OLD], 阳光: [0, OLD] });
+
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByLabel('Looking up a known word moves it back to 2')).toBeChecked();
+  });
+
+  test('can be turned off in settings', async ({ page }) => {
+    await setUp(page, MULTI_PAGE, { name: 'book.txt', known: { 今天: [3, OLD] } });
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByLabel('Looking up a known word moves it back to 2').uncheck();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+    await tapText(page, '今天');
+    await expect(status(page).getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'true');
+    expect((await storedKnownWords(page))?.words).toEqual({ 今天: [3, OLD] });
+
+    // Stays off after a restart.
+    await page.reload();
+    await expect(page.locator('body[data-ready]')).toBeAttached();
+    await openFirstBook(page);
+    await tapText(page, '今天');
+    await expect(status(page).getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'true');
+    expect((await storedKnownWords(page))?.words).toEqual({ 今天: [3, OLD] });
+  });
+});

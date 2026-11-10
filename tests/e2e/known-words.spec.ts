@@ -28,19 +28,22 @@ test('status buttons under the translation set and remember a word’s level', a
   await expect(pressed(page)).toHaveText('1');
   await status(page).getByRole('button', { name: 'Known' }).click();
   await expect(pressed(page)).toHaveText('✓');
+  await status(page).getByRole('button', { name: 'Level 2' }).click();
+  await expect(pressed(page)).toHaveText('2');
 
   // Another word is independent; coming back shows the saved level.
+  // (Not ✓: looking up a known word moves it back to 2, tested in mark-known.spec.ts.)
   await tapText(page, '阳光');
   await expect(pressed(page)).toHaveCount(0);
   await tapText(page, '头发', 1);
-  await expect(pressed(page)).toHaveText('✓');
+  await expect(pressed(page)).toHaveText('2');
 
   // Survives a restart.
   await page.reload();
   await expect(page.locator('body[data-ready]')).toBeAttached();
   await openFirstBook(page);
   await tapText(page, '头发');
-  await expect(pressed(page)).toHaveText('✓');
+  await expect(pressed(page)).toHaveText('2');
 });
 
 test('status row stays visible when long entries scroll', async ({ page }) => {
@@ -95,8 +98,7 @@ test('import a known-words file to start off with, then look words up', async ({
   await expect(row.locator('.known-summary')).toHaveText('2 words · 1 known');
   await page.getByRole('button', { name: 'Close settings' }).click();
 
-  await tapText(page, '头发');
-  await expect(pressed(page)).toHaveText('✓');
+  // 头发 (✓) isn't looked up here: that would move it back to 2 and change the export below.
   await tapText(page, '阳光');
   await expect(pressed(page)).toHaveText('1');
 

@@ -9,13 +9,15 @@ export interface Settings {
   highlightWords: boolean;
   /** Offer to mark unlooked-up words as known when turning a page. On by default. */
   markKnownPrompt: boolean;
+  /** Looking up a known word (✓) moves it back to level 2. On by default. */
+  downgradeOnLookup: boolean;
   /** Format last chosen for pasted chapters, preselected next time. */
   chapterFormat: 'txt' | 'md';
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, chapterFormat: 'txt' };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, chapterFormat: 'txt' };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };
