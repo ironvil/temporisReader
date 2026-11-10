@@ -17,6 +17,7 @@ import { openDialog } from '../ui/dialog';
 import { toast } from '../ui/dom';
 import { KNOWN, knownWords, LEVELS, wordsToMarkKnown, type Level } from '../vocab/known-words';
 import { LookupPopup } from './popup';
+import { chapterStartOffsets, estimatePage, globalOffset, guessCharsPerPage, locateOffset, type Located } from './scrub';
 
 const MARGIN_X = 20;
 const MARGIN_Y = 16;
@@ -25,6 +26,8 @@ const SWIPE_THRESHOLD = 50;
 const SAVE_DELAY = 400;
 /** Pages read for less than this are skipped by the "mark unlooked-up words as known" prompt. */
 export const MIN_PAGE_DWELL_MS = 10_000;
+/** The scrubber jumps once the thumb has been still this long (pagination only happens then). */
+export const SCRUB_SETTLE_MS = 2_000;
 
 /** A place in the current chapter. */
 interface Position {
@@ -121,6 +124,18 @@ export class Reader {
   private gesture: Gesture | null = null;
   private layoutSize = '';
   private relayoutTimer: number | undefined;
+  private readonly indicator: HTMLButtonElement;
+  private readonly scrubber: HTMLElement;
+  private readonly scrubInput: HTMLInputElement;
+  private readonly scrubLabel: HTMLElement;
+  private readonly scrubDetail: HTMLElement;
+  private readonly scrubTicks: HTMLElement;
+  private ticksForBook: OpenBook | null = null;
+  private chapterStarts: number[] = [];
+  /** Cached per layout (chapter + page size + text size). */
+  private cachedCharsPerPage: number | null = null;
+  private pendingScrub: Located | null = null;
+  private scrubTimer: number | undefined;
 
   constructor(private readonly callbacks: ReaderCallbacks) {
     this.bookTitle = el('div', { class: 'book-title' });
@@ -131,7 +146,27 @@ export class Reader {
     this.popup = new LookupPopup(pageWrap);
     this.pageCountEl = el('span', { class: 'page-count' });
     this.chapterCountEl = el('span', { class: 'chapter-count' });
-    const indicator = el('div', { class: 'page-indicator', 'aria-live': 'polite' }, this.pageCountEl, this.chapterCountEl);
+    this.indicator = el(
+      'button',
+      { type: 'button', class: 'page-indicator', 'aria-expanded': 'false', 'aria-label': 'Book position' },
+      this.pageCountEl,
+      this.chapterCountEl,
+    );
+    this.indicator.addEventListener('click', () => this.toggleScrubber());
+    const indicator = this.indicator;
+
+    this.scrubLabel = el('div', { class: 'scrub-label' });
+    this.scrubDetail = el('div', { class: 'scrub-detail' });
+    this.scrubTicks = el('div', { class: 'scrub-ticks', 'aria-hidden': 'true' });
+    this.scrubInput = el('input', { type: 'range', min: '0', step: '1', class: 'scrub-range', 'aria-label': 'Position in book' });
+    this.scrubInput.addEventListener('input', () => this.onScrub());
+    this.scrubber = el(
+      'div',
+      { class: 'scrubber', hidden: true, role: 'group', 'aria-label': 'Book position' },
+      el('div', { class: 'scrub-text', 'aria-live': 'polite' }, this.scrubLabel, this.scrubDetail),
+      el('div', { class: 'scrub-track' }, this.scrubTicks, this.scrubInput),
+    );
+    pageWrap.append(this.scrubber);
 
     this.root = el(
       'section',
@@ -154,9 +189,14 @@ export class Reader {
     });
     document.addEventListener('keydown', (e) => {
       if (this.root.hidden || !this.book || document.querySelector('dialog[open]')) return;
+      if (e.key === 'Escape') {
+        if (!this.scrubber.hidden) this.toggleScrubber(false);
+        else this.closeLookup();
+        return;
+      }
+      if (e.target instanceof HTMLInputElement) return; // arrow keys move the scrubber
       if (e.key === 'ArrowRight' || e.key === 'PageDown') this.next();
       else if (e.key === 'ArrowLeft' || e.key === 'PageUp') this.prev();
-      else if (e.key === 'Escape') this.closeLookup();
     });
   }
 
@@ -177,6 +217,10 @@ export class Reader {
   }
 
   async close(): Promise<void> {
+    this.cancelScrub();
+    this.scrubber.hidden = true;
+    this.indicator.setAttribute('aria-expanded', 'false');
+    this.ticksForBook = null;
     const saved = this.flush();
     this.closeLookup();
     this.book = null;
@@ -187,6 +231,10 @@ export class Reader {
 
   /** Handles the Android back button. Returns true if it was consumed. */
   handleBack(): boolean {
+    if (!this.scrubber.hidden) {
+      this.toggleScrubber(false);
+      return true;
+    }
     if (this.popup.isOpen) {
       this.closeLookup();
       return true;
@@ -206,6 +254,7 @@ export class Reader {
 
   next(): void {
     if (!this.book) return;
+    this.cancelScrub();
     const atEnd = this.page === this.pageCount - 1 && this.chapterIndex === this.book.index.chapters.length - 1;
     if (atEnd) return this.applyTransform(true);
     // Collect before the page changes (the next chapter replaces the DOM).
@@ -221,12 +270,110 @@ export class Reader {
 
   prev(): void {
     if (!this.book) return;
+    this.cancelScrub();
     if (this.page > 0) this.setPage(this.page - 1, true);
     else if (this.chapterIndex > 0) {
       this.renderChapter(this.chapterIndex - 1);
       this.setPage(this.pageCount - 1);
     } else return this.applyTransform(true);
     this.startPageVisit();
+  }
+
+  // ── Book scrubber ────────────────────────────────────────────────────────
+
+  private toggleScrubber(open = this.scrubber.hidden): void {
+    if (!this.book) return;
+    if (!open) {
+      this.commitScrub(); // a pending jump still happens when the scrubber is closed
+      this.scrubber.hidden = true;
+      this.indicator.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    if (this.ticksForBook !== this.book) this.renderScrubber(this.book);
+    this.scrubber.hidden = false;
+    this.indicator.setAttribute('aria-expanded', 'true');
+    this.syncScrubber();
+  }
+
+  /** Slider range and chapter-break ticks; once per opened book. */
+  private renderScrubber(book: OpenBook): void {
+    const length = Math.max(1, book.content.length);
+    this.scrubInput.max = String(length);
+    this.chapterStarts = chapterStartOffsets(book.index);
+    this.scrubTicks.replaceChildren(
+      ...this.chapterStarts
+        .slice(1)
+        .map((offset) => el('span', { class: 'scrub-tick', style: `left: ${((offset / length) * 100).toFixed(3)}%` })),
+    );
+    this.ticksForBook = book;
+  }
+
+  /** Shows the current (exact) position, unless a jump is pending. */
+  private syncScrubber(): void {
+    const book = this.book;
+    if (!book || this.scrubber.hidden || this.pendingScrub) return;
+    const { paragraph, char } = this.position;
+    const offset = globalOffset(book.index, this.chapterIndex, paragraph, char);
+    this.scrubInput.value = String(offset);
+    this.setScrubText(this.chapterIndex, `Page ${this.page + 1} of ${this.pageCount}`, offset);
+  }
+
+  private setScrubText(chapter: number, pageText: string, offset: number): void {
+    const book = this.book!;
+    const chapters = book.index.chapters;
+    const percent = Math.round((offset / Math.max(1, book.content.length)) * 100);
+    this.scrubLabel.textContent = chapters.length > 1 ? `Chapter ${chapter + 1} of ${chapters.length} · ${chapters[chapter].title}` : chapters[chapter].title;
+    this.scrubDetail.textContent = `${pageText} · ${percent}%`;
+  }
+
+  /** While dragging: only estimate. The jump (and pagination) waits until the thumb settles. */
+  private onScrub(): void {
+    const book = this.book;
+    if (!book) return;
+    const offset = Number(this.scrubInput.value);
+    const target = locateOffset(book.index, book.content.length, offset);
+    const starts = this.chapterStarts;
+    const chapterEnd = starts[target.chapter + 1] ?? book.content.length;
+    const { page, pages } = estimatePage(offset - starts[target.chapter], chapterEnd - starts[target.chapter], this.charsPerPage());
+    this.setScrubText(target.chapter, `Page ≈${page} of ≈${pages}`, offset);
+
+    this.pendingScrub = target;
+    clearTimeout(this.scrubTimer);
+    this.scrubTimer = window.setTimeout(() => this.commitScrub(), SCRUB_SETTLE_MS);
+  }
+
+  private commitScrub(): void {
+    clearTimeout(this.scrubTimer);
+    const target = this.pendingScrub;
+    this.pendingScrub = null;
+    if (!target || !this.book) return;
+    if (target.chapter !== this.chapterIndex) this.renderChapter(target.chapter);
+    this.goTo({ paragraph: target.paragraph, char: target.char });
+    this.startPageVisit(); // a jump is not a page turn: no mark-known prompt, fresh timer
+    this.syncScrubber();
+  }
+
+  private cancelScrub(): void {
+    clearTimeout(this.scrubTimer);
+    this.pendingScrub = null;
+  }
+
+  /** Characters per page: measured from the current chapter when it spans pages, else guessed from the page size. */
+  private charsPerPage(): number {
+    this.cachedCharsPerPage ??= this.measureCharsPerPage();
+    return this.cachedCharsPerPage;
+  }
+
+  private measureCharsPerPage(): number {
+    const book = this.book!;
+    if (this.pageCount >= 2) {
+      const lastPage = this.firstPositionOnPage(this.pageCount - 1);
+      const chapterStart = globalOffset(book.index, this.chapterIndex, 0, 0);
+      const measured = (globalOffset(book.index, this.chapterIndex, lastPage.paragraph, lastPage.char) - chapterStart) / (this.pageCount - 1);
+      if (measured > 0) return measured;
+    }
+    const fontSize = parseFloat(getComputedStyle(this.flow).fontSize) || 22;
+    return guessCharsPerPage(this.area.clientWidth - 2 * MARGIN_X, this.area.clientHeight - 2 * MARGIN_Y, fontSize);
   }
 
   // ── Mark unlooked-up words as known ──────────────────────────────────────
@@ -292,6 +439,7 @@ export class Reader {
     this.closeLookup();
     this.position = keep ?? this.firstPositionOnPage(this.page);
     this.updateChrome();
+    this.syncScrubber();
     this.scheduleSave();
   }
 
@@ -345,6 +493,7 @@ export class Reader {
       columnGap: `${2 * MARGIN_X}px`,
     });
     this.stride = width;
+    this.cachedCharsPerPage = null;
     this.layoutSize = `${width}x${height}`;
     this.pageCount = this.computePageCount();
   }
