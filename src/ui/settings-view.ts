@@ -138,6 +138,8 @@ export class SettingsView {
     prompt.addEventListener('change', () => void updateSettings({ markKnownPrompt: prompt.checked }));
     const downgrade = el('input', { type: 'checkbox', checked: settings.downgradeOnLookup });
     downgrade.addEventListener('change', () => void updateSettings({ downgradeOnLookup: downgrade.checked }));
+    const track = el('input', { type: 'checkbox', checked: settings.trackOnLookup });
+    track.addEventListener('change', () => void updateSettings({ trackOnLookup: track.checked }));
     const highlight = el('input', { type: 'checkbox', checked: settings.highlightWords });
     highlight.addEventListener('change', () => void updateSettings({ highlightWords: highlight.checked }));
 
@@ -151,6 +153,8 @@ export class SettingsView {
       el('p', { class: 'setting-help' }, 'Asked when turning forward after at least 10 seconds on a page.'),
       el('label', { class: 'checkbox' }, downgrade, el('span', {}, 'Looking up a known word moves it back to 2')),
       el('p', { class: 'setting-help' }, 'If you needed to look it up, you don’t quite know it yet.'),
+      el('label', { class: 'checkbox' }, track, el('span', {}, 'Looking up a new word sets it to 1')),
+      el('p', { class: 'setting-help' }, 'For words not in your known-words list yet.'),
       el('label', { class: 'checkbox' }, highlight, el('span', {}, 'Highlight words you don’t know yet')),
       el(
         'p',

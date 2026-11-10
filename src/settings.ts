@@ -11,13 +11,15 @@ export interface Settings {
   markKnownPrompt: boolean;
   /** Looking up a known word (✓) moves it back to level 2. On by default. */
   downgradeOnLookup: boolean;
+  /** Looking up a word that isn't in the known-words list adds it at level 1. On by default. */
+  trackOnLookup: boolean;
   /** Format last chosen for pasted chapters, preselected next time. */
   chapterFormat: 'txt' | 'md';
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, chapterFormat: 'txt' };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, trackOnLookup: true, chapterFormat: 'txt' };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };

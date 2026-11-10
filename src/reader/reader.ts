@@ -901,18 +901,25 @@ export class Reader {
     this.highlight(range);
     const anchor = range.getClientRects()[0] ?? range.getBoundingClientRect();
     if (!result.entries.length) return this.popup.show(this.renderNotice(result), anchor);
-    if (getSettings().downgradeOnLookup) await this.downgradeKnown(lang.id, result.headword);
+    await this.updateLevelOnLookup(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
     const status = await this.statusButtons(lang.id, result.headword);
     if (seq !== this.lookupSeq) return;
     this.popup.show(lang.renderEntries(result), anchor, result.source, status);
   }
 
-  /** A known word that had to be looked up isn't really known: back to 2 (dated today). */
-  private async downgradeKnown(language: string, word: string): Promise<void> {
+  /**
+   * Looking a word up says something about it (each part has its own setting, both dated today):
+   * a known word isn't really known, so it goes back to 2; a word not in the list yet starts at 1.
+   */
+  private async updateLevelOnLookup(language: string, word: string): Promise<void> {
+    const { downgradeOnLookup, trackOnLookup } = getSettings();
+    if (!downgradeOnLookup && !trackOnLookup) return;
     const store = knownWords(language);
     await store.load();
-    if (store.level(word) === KNOWN) await store.set(word, 2);
+    const level = store.level(word);
+    if (level === KNOWN && downgradeOnLookup) await store.set(word, 2);
+    else if (level === undefined && trackOnLookup) await store.set(word, 1);
   }
 
   /** 0 / 1 / 2 / ✓ buttons; the word's current level is highlighted. Tapping sets it and stamps today. */

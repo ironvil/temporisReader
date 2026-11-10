@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 test('status buttons under the translation set and remember a word’s level', async ({ page }) => {
   await tapText(page, '头发');
   await expect(status(page).getByRole('button')).toHaveText(['0', '1', '2', '✓']);
-  await expect(pressed(page)).toHaveCount(0); // not tracked yet
+  await expect(pressed(page)).toHaveText('1'); // not tracked yet: looking it up adds it at 1
 
   await status(page).getByRole('button', { name: 'Level 1' }).click();
   await expect(pressed(page)).toHaveText('1');
@@ -34,7 +34,7 @@ test('status buttons under the translation set and remember a word’s level', a
   // Another word is independent; coming back shows the saved level.
   // (Not ✓: looking up a known word moves it back to 2, tested in mark-known.spec.ts.)
   await tapText(page, '阳光');
-  await expect(pressed(page)).toHaveCount(0);
+  await expect(pressed(page)).toHaveText('1');
   await tapText(page, '头发', 1);
   await expect(pressed(page)).toHaveText('2');
 
