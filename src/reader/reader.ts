@@ -402,7 +402,7 @@ export class Reader {
    */
   private unlookedWordsOnLeavingPage(): { language: string; words: string[] } | null {
     const lang = this.lang;
-    if (!lang || Date.now() - this.pageShownAt < MIN_PAGE_DWELL_MS) return null;
+    if (!lang || !getSettings().markKnownPrompt || Date.now() - this.pageShownAt < MIN_PAGE_DWELL_MS) return null;
     const store = knownWords(lang.id);
     if (!store.isLoaded || !lang.ready()) return null;
     const words = wordsToMarkKnown(this.wordsOnPage(this.page), this.pageLookups, (w) => store.level(w), (w) => lang.isTrackable(w));

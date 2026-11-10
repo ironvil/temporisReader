@@ -265,3 +265,29 @@ test('pasted markdown can be split too', async ({ page }) => {
   await expectChapters(page, ['书名']);
   await expect(page.locator('.chapter-details')).toHaveText('3 chapters · Pasted text');
 });
+
+test('the add-chapter format remembers the last choice, across restarts', async ({ page }) => {
+  await createBook(page, 'Book');
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  let dialog = page.getByRole('dialog', { name: 'Add chapter' });
+  await expect(dialog.getByLabel('Format')).toHaveValue('txt'); // default
+  await dialog.getByLabel('Format').selectOption('md');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  dialog = page.getByRole('dialog', { name: 'Add chapter' });
+  await expect(dialog.getByLabel('Format')).toHaveValue('md');
+  await dialog.getByLabel('Chapter text').fill('**粗体**');
+  await dialog.getByRole('button', { name: 'Add' }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.reload();
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+  await page.getByRole('button', { name: 'Edit Book' }).click();
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add chapter' }).getByLabel('Format')).toHaveValue('md');
+  await page.getByRole('dialog', { name: 'Add chapter' }).getByLabel('Format').selectOption('txt');
+  await page.getByRole('dialog', { name: 'Add chapter' }).getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Add chapter' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add chapter' }).getByLabel('Format')).toHaveValue('txt');
+});

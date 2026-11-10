@@ -127,6 +127,8 @@ export class SettingsView {
     );
     theme.addEventListener('change', () => void updateSettings({ theme: theme.value as Theme }));
 
+    const prompt = el('input', { type: 'checkbox', checked: settings.markKnownPrompt });
+    prompt.addEventListener('change', () => void updateSettings({ markKnownPrompt: prompt.checked }));
     const highlight = el('input', { type: 'checkbox', checked: settings.highlightWords });
     highlight.addEventListener('change', () => void updateSettings({ highlightWords: highlight.checked }));
 
@@ -136,6 +138,8 @@ export class SettingsView {
       el('div', { class: 'setting-row' }, el('span', {}, 'Text size'), el('div', { class: 'stepper' }, smaller, size, larger)),
       preview,
       el('div', { class: 'setting-row' }, el('span', {}, 'Theme'), theme),
+      el('label', { class: 'checkbox' }, prompt, el('span', {}, 'Offer to mark words I didn’t look up as known')),
+      el('p', { class: 'setting-help' }, 'Asked when turning forward after at least 10 seconds on a page.'),
       el('label', { class: 'checkbox' }, highlight, el('span', {}, 'Highlight words you don’t know yet')),
       el(
         'p',

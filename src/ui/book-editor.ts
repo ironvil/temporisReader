@@ -12,6 +12,7 @@ import {
   type SourceMeta,
 } from '../books/library';
 import { formatFromFileName, type BookFormat } from '../books/parse';
+import { getSettings, updateSettings } from '../settings';
 import { field, openDialog } from './dialog';
 import { el, toast } from './dom';
 import { iconButton } from './icons';
@@ -120,12 +121,14 @@ export class BookEditorView {
     const chooseFile = el('button', { type: 'button', class: 'button secondary' }, 'Choose file…');
     const clearFile = el('button', { type: 'button', class: 'button secondary', hidden: true }, 'Remove file');
     const text = el('textarea', { rows: '8', placeholder: 'Paste the chapter text here', 'aria-label': 'Chapter text' });
+    const lastFormat = getSettings().chapterFormat;
     const format = el(
       'select',
       { 'aria-label': 'Format' },
-      el('option', { value: 'txt' }, 'Plain text'),
-      el('option', { value: 'md' }, 'Markdown'),
+      el('option', { value: 'txt', selected: lastFormat === 'txt' }, 'Plain text'),
+      el('option', { value: 'md', selected: lastFormat === 'md' }, 'Markdown'),
     );
+    format.addEventListener('change', () => void updateSettings({ chapterFormat: format.value as BookFormat }));
     const pasteSection = el('div', { class: 'paste-section' }, el('p', { class: 'muted or' }, 'or paste text'), text, field('Format', format));
     const split = el('input', { type: 'checkbox' });
     const preview = el('p', { class: 'muted split-preview', 'aria-live': 'polite' });

@@ -315,3 +315,31 @@ test('leaving every word out disables marking', async ({ page }) => {
   await prompt(page).getByRole('button', { name: 'Not now' }).click();
   expect(await storedKnownWords(page)).toBeNull();
 });
+
+test('the prompt can be turned off in settings (on by default)', async ({ page }) => {
+  await setUp(page, MULTI_PAGE, { name: 'book.txt' });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const toggle = page.getByLabel('Offer to mark words I didn’t look up as known');
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await page.getByRole('button', { name: 'Close settings' }).click();
+
+  await dwell(page, 30_000);
+  await nextWithoutPrompt(page);
+  expect(await storedKnownWords(page)).toBeNull();
+
+  // Stays off after a restart…
+  await page.reload();
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+  await openFirstBook(page);
+  await dwell(page, 30_000);
+  await nextWithoutPrompt(page);
+
+  // …and turning it back on brings the prompt back.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByLabel('Offer to mark words I didn’t look up as known').check();
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await dwell(page, 10_000);
+  await nextPage(page);
+  await expect(prompt(page)).toBeVisible();
+});
