@@ -40,3 +40,33 @@ export async function gunzipText(bytes: Uint8Array): Promise<string> {
   }
   return new TextDecoder().decode(bytes);
 }
+
+/** Decompresses gzip data to bytes (checked by magic bytes; anything else passes through). */
+export async function gunzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+export async function gzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Splits a text stream into lines (without the newline), calling `onLine` for each. */
+export async function forEachLine(stream: ReadableStream<string>, onLine: (line: string) => void): Promise<void> {
+  const reader = stream.getReader();
+  let rest = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = rest + value;
+    let start = 0;
+    for (let nl = text.indexOf('\n'); nl !== -1; nl = text.indexOf('\n', start)) {
+      onLine(text.slice(start, nl));
+      start = nl + 1;
+    }
+    rest = text.slice(start);
+  }
+  if (rest) onLine(rest);
+}

@@ -11,7 +11,7 @@ import { readJson, writeJson } from '../storage';
 import type { WordSegmenter } from '../segmentation/types';
 import { KNOWN, type Level } from './known-words';
 
-/** Trackable word → number of occurrences. */
+/** Known-words key → number of occurrences. */
 export type WordCounts = Record<string, number>;
 
 interface StoredCounts {
@@ -26,14 +26,14 @@ export interface KnownShare {
   total: number;
 }
 
-/** Counts trackable word occurrences in one chapter's paragraphs. */
-export function countWords(paragraphs: Iterable<string>, segmenter: WordSegmenter, isTrackable: (word: string) => boolean): WordCounts {
+/** Counts trackable word occurrences in one chapter's paragraphs, by known-words key. */
+export function countWords(paragraphs: Iterable<string>, segmenter: WordSegmenter, keyOf: (word: string) => string | null): WordCounts {
   const counts: WordCounts = {};
   for (const text of paragraphs) {
     for (const span of segmenter.segment(text)) {
       if (!span.isWord) continue;
-      const word = text.slice(span.start, span.end);
-      if (isTrackable(word)) counts[word] = (counts[word] ?? 0) + 1;
+      const word = keyOf(text.slice(span.start, span.end));
+      if (word !== null) counts[word] = (counts[word] ?? 0) + 1;
     }
   }
   return counts;
@@ -85,7 +85,7 @@ export function bookWordCounts(bookId: string, lang: LanguageModule, book?: Open
     const chapters: WordCounts[] = [];
     for (const chapter of source.index.chapters) {
       const paragraphs = Array.from({ length: chapter.end - chapter.start }, (_, i) => source.paragraph(chapter.start + i));
-      chapters.push(countWords(paragraphs, lang.segmenter, (w) => lang.isTrackable(w)));
+      chapters.push(countWords(paragraphs, lang.segmenter, (w) => lang.wordKey(w)));
       await yieldToUi();
     }
     const result = { key, chapters };

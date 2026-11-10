@@ -8,7 +8,8 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator.
 - Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 1 s.
 - Progress is saved as chapter, paragraph, word (and character offset for exact restore).
-- Languages are added in Settings → Languages, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT.
+- Languages are added in Settings → Languages, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT. French uses English Wiktionary via kaikki.org: a ~60 MB download that is streamed through once on the phone and trimmed to ~6 MB (`src/languages/fr/wiktionary-data.ts`; measure with `node scripts/measure-wiktionary.mjs <file.jsonl.gz>`).
+- French: inflected forms show their dictionary form (mangeaient → manger) with the inflection note, and known words are tracked by dictionary form, so every form of a word shares one level. Elisions split off (l’homme → l’ + homme) and hyphenated entries stay whole (peut-être).
 - Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.
 - Markdown bold and italics are rendered.
 - Known words per language: the lookup popup has 0 / 1 / 2 / ✓ buttons (✓ = 3, known); each tap records the level and today's date. Settings → Languages imports (merging, newer date wins; or replacing the list with an exact copy of the file) and exports the list as `known-words-<lang>-<date>.json` (`{version, updated, words: {word: [level, date]}}`) via the Android share sheet.

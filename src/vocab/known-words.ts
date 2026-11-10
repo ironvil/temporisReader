@@ -85,18 +85,20 @@ export function markWords(file: KnownWordsFile, words: readonly string[], level:
 }
 
 /**
- * Words to offer as known after reading a page: words on the page (in order, de-duplicated) that
- * are trackable (have a dictionary entry), weren't looked up, and aren't already known.
+ * Words to offer as known after reading a page: the keys (see LanguageModule.wordKey) of words on
+ * the page, in order and de-duplicated, that are trackable (have a dictionary entry), weren't
+ * looked up, and aren't already known.
  */
 export function wordsToMarkKnown(
   pageWords: Iterable<string>,
   lookedUp: ReadonlySet<string>,
   levelOf: (word: string) => Level | undefined,
-  isTrackable: (word: string) => boolean,
+  keyOf: (word: string) => string | null,
 ): string[] {
   const out = new Set<string>();
-  for (const word of pageWords) {
-    if (out.has(word) || lookedUp.has(word) || levelOf(word) === KNOWN || !isTrackable(word)) continue;
+  for (const pageWord of pageWords) {
+    const word = keyOf(pageWord);
+    if (word === null || out.has(word) || lookedUp.has(word) || levelOf(word) === KNOWN) continue;
     out.add(word);
   }
   return [...out];

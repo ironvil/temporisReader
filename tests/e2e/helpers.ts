@@ -25,6 +25,68 @@ export function fakeCedict(): Buffer {
   return gzipSync(Buffer.from(lines.join('\n')));
 }
 
+export const WIKTIONARY_FR_URL = 'https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl.gz';
+
+/** A few kaikki.org-shaped French entries, padded past the installer's 1000-entry sanity check. */
+export function fakeWiktionary(): Buffer {
+  const sense = (gloss: string, extra: Record<string, unknown> = {}) => ({ glosses: [gloss], ...extra });
+  const formOf = (gloss: string, lemma: string) => ({ glosses: [gloss], form_of: [{ word: lemma }], tags: ['form-of'] });
+  const entry = (word: string, pos: string, senses: unknown[], extra: Record<string, unknown> = {}) => ({ word, pos, lang: 'French', lang_code: 'fr', senses, ...extra });
+  const entries = [
+    entry('manger', 'verb', [sense('to eat', { raw_glosses: ['(transitive) to eat'] })], { sounds: [{ ipa: '/mɑ̃.ʒe/' }, { audio: 'Fr-manger.ogg' }], head_templates: [{ expansion: 'manger' }] }),
+    entry('mange', 'verb', [formOf('first/third-person singular present indicative of manger', 'manger')]),
+    entry('mangeaient', 'verb', [formOf('third-person plural imperfect indicative of manger', 'manger')]),
+    entry('maison', 'noun', [sense('house'), sense('home')], { head_templates: [{ expansion: 'maison f (plural maisons)' }], sounds: [{ ipa: '/mɛ.zɔ̃/' }] }),
+    entry('maisons', 'noun', [formOf('plural of maison', 'maison')]),
+    entry('livre', 'noun', [sense('book')], { head_templates: [{ expansion: 'livre m (plural livres)' }] }),
+    entry('livre', 'verb', [formOf('first/third-person singular present indicative of livrer', 'livrer')]),
+    entry('livrer', 'verb', [sense('to deliver')]),
+    entry('beau', 'adj', [sense('beautiful, handsome')], { head_templates: [{ expansion: 'beau (feminine belle, masculine plural beaux, feminine plural belles)' }] }),
+    entry('belles', 'adj', [formOf('feminine plural of beau', 'beau')]),
+    entry('le', 'article', [sense('the (definite article)')]),
+    entry("l'", 'article', [formOf('apocopic form of le, la: the', 'le')]),
+    entry('homme', 'noun', [sense('man')]),
+    entry('il', 'pron', [sense('he')]),
+    entry('dans', 'prep', [sense('in, inside')]),
+    entry('la', 'article', [sense('the (feminine definite article)')]),
+    entry("aujourd'hui", 'adv', [sense('today')]),
+    entry('peut-être', 'adv', [sense('maybe, perhaps')]),
+    entry('un', 'article', [sense('a, an')]),
+    entry('lit', 'verb', [formOf('third-person singular present indicative of lire', 'lire')]),
+    entry('lire', 'verb', [sense('to read')]),
+    entry('Paris', 'name', [sense('Paris (the capital of France)')]),
+    entry('plus', 'adv', [sense('more')]),
+    entry('Hund', 'noun', [sense('dog')], { lang: 'German', lang_code: 'de' }),
+  ];
+  const lines = entries.map((e) => JSON.stringify(e));
+  for (let i = 0; i < 1100; i++) lines.push(JSON.stringify(entry(`remplissage${i}`, 'noun', [sense(`filler ${i}`)])));
+  lines.splice(5, 0, '{ not json');
+  return gzipSync(Buffer.from(lines.join('\n') + '\n'));
+}
+
+export function frenchBook(): string {
+  const sentences = [
+    'Aujourd’hui, l’homme mange dans la maison.',
+    'Il lit un livre, peut-être le plus beau livre de Paris.',
+    'Les belles maisons mangeaient la lumière du matin.',
+  ];
+  // Markdown headings: the plain-text chapter detection only knows Chinese chapter titles.
+  const chapter = (title: string, n: number) => [`# ${title}`, ...Array.from({ length: n }, (_, i) => sentences[i % sentences.length])].join('\n\n');
+  return [chapter('Chapitre un', 30), chapter('Chapitre deux', 6)].join('\n\n');
+}
+
+/** Settings → Languages → French → Add, serving a fake kaikki.org extract. */
+export async function addFrench(page: Page): Promise<void> {
+  await page.route(WIKTIONARY_FR_URL, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/octet-stream', body: fakeWiktionary(), headers: { 'access-control-allow-origin': '*' } }),
+  );
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('[data-language="fr"]');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Added');
+  await page.getByRole('button', { name: 'Close settings' }).click();
+}
+
 export function chineseBook(): string {
   const sentences = [
     '今天早上，阳光从高高的窗户里斜斜地照进来，落在桌子上，落在银梳子上，落在她的头发上。',

@@ -44,8 +44,8 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
     return key && `zh:cedict:${key}`;
   }
 
-  isTrackable(word: string): boolean {
-    return ALL_HAN.test(word) && this.cedict.has(word);
+  wordKey(word: string): string | null {
+    return ALL_HAN.test(word) && this.cedict.has(word) ? word : null;
   }
 
   async lookup(paragraph: string, index: number): Promise<LookupResult<CedictEntry> | null> {

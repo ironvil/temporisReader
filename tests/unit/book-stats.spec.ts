@@ -11,11 +11,16 @@ const list: WordList = {
   maxLengthFrom: (c) => (WORDS.some((w) => w.startsWith(c)) ? 2 : 0),
 };
 const segmenter = new DictionaryWordSegmenter(list, /\p{Script=Han}+/u, new IntlWordSegmenter('en'));
-const trackable = (w: string) => WORDS.includes(w);
+const trackable = (w: string) => (WORDS.includes(w) ? w : null);
 
 test('countWords counts occurrences of trackable words only', () => {
   expect(countWords(['今天阳光很好。今天。', '镜子 OK'], segmenter, trackable)).toEqual({ 今天: 2, 阳光: 1, 镜子: 1 });
   expect(countWords([], segmenter, trackable)).toEqual({});
+});
+
+test('countWords counts by key, so inflected forms add up under their dictionary form', () => {
+  const lemma = (w: string) => ({ mange: 'manger', mangeaient: 'manger', maison: 'maison' })[w] ?? null;
+  expect(countWords(['Il mange.', 'Ils mangeaient à la maison.'], new IntlWordSegmenter('fr'), lemma)).toEqual({ manger: 2, maison: 1 });
 });
 
 test('knownShare weights by occurrences and counts only level 3 as known', () => {

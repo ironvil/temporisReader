@@ -65,7 +65,7 @@ test('merge with nothing new leaves updated alone', () => {
 test.describe('wordsToMarkKnown', () => {
   const levels: Record<string, Level> = { 已知: 3, 学一: 1, 学零: 0, 学二: 2 };
   const levelOf = (w: string) => levels[w];
-  const trackable = (w: string) => w !== '不是词';
+  const trackable = (w: string) => (w === '不是词' ? null : w);
 
   test('keeps page order and removes duplicates', () => {
     expect(wordsToMarkKnown(['乙', '甲', '乙', '丙', '甲'], new Set(), levelOf, trackable)).toEqual(['乙', '甲', '丙']);
@@ -81,6 +81,12 @@ test.describe('wordsToMarkKnown', () => {
 
   test('excludes words without a dictionary entry', () => {
     expect(wordsToMarkKnown(['甲', '不是词'], new Set(), levelOf, trackable)).toEqual(['甲']);
+  });
+
+  test('offers keys: inflected forms share one entry, and a looked-up key covers all its forms', () => {
+    const lemma = (w: string) => ({ mange: 'manger', mangeaient: 'manger', belles: 'beau' })[w] ?? null;
+    expect(wordsToMarkKnown(['mange', 'belles', 'mangeaient'], new Set(), levelOf, lemma)).toEqual(['manger', 'beau']);
+    expect(wordsToMarkKnown(['mange', 'belles', 'mangeaient'], new Set(['manger']), levelOf, lemma)).toEqual(['beau']);
   });
 
   test('nothing to offer', () => {

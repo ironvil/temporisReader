@@ -202,6 +202,10 @@ export class SettingsView {
           status.textContent = `Downloading ${active.name}… ${formatBytes(p.bytes ?? 0)}${p.total ? ` of ${formatBytes(p.total)}` : ''}`;
           if (p.total) bar.value = (p.bytes ?? 0) / p.total;
           else bar.removeAttribute('value');
+        } else if (p.total) {
+          // Big dictionaries are processed after downloading (French: ~600 MB of JSON).
+          status.textContent = `Preparing ${active.name}… ${Math.floor(((p.bytes ?? 0) / p.total) * 100)}%`;
+          bar.value = (p.bytes ?? 0) / p.total;
         } else {
           status.textContent = `Preparing ${active.name}…`;
           bar.removeAttribute('value');

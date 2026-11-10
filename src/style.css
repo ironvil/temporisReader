@@ -517,6 +517,47 @@ progress {
   font-weight: 700;
 }
 
+/* French entries */
+.fr-form {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+.fr-form .fr-arrow {
+  color: var(--muted);
+  margin: 0 6px;
+}
+.fr-form-note {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 1rem;
+}
+.fr-entry + .fr-entry,
+.fr-form-note + .fr-entry {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.fr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.fr-word {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.fr-gram,
+.fr-ipa {
+  color: var(--muted);
+}
+.fr-pos {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 /* Languages in settings */
 .lang-head {
   display: flex;

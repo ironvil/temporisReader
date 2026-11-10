@@ -141,7 +141,7 @@ test.describe('import with "replace" ticked', () => {
   });
 
   test('clears the list and loads the file exactly', async ({ page }) => {
-    await page.getByLabel('Replace current list instead of merging').check();
+    await page.locator('[data-known-words="zh"]').getByLabel('Replace current list instead of merging').check();
     let message = '';
     page.once('dialog', (d) => {
       message = d.message();
@@ -161,7 +161,7 @@ test.describe('import with "replace" ticked', () => {
   });
 
   test('cancelling the confirmation keeps the current list', async ({ page }) => {
-    await page.getByLabel('Replace current list instead of merging').check();
+    await page.locator('[data-known-words="zh"]').getByLabel('Replace current list instead of merging').check();
     page.once('dialog', (d) => void d.dismiss());
     await importFile(page, 'replacement.json', replacement);
     await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
@@ -169,7 +169,7 @@ test.describe('import with "replace" ticked', () => {
   });
 
   test('an invalid file is rejected before anything is cleared', async ({ page }) => {
-    await page.getByLabel('Replace current list instead of merging').check();
+    await page.locator('[data-known-words="zh"]').getByLabel('Replace current list instead of merging').check();
     let asked = false;
     page.on('dialog', (d) => {
       asked = true;
@@ -182,7 +182,7 @@ test.describe('import with "replace" ticked', () => {
   });
 
   test('unticked still merges', async ({ page }) => {
-    await expect(page.getByLabel('Replace current list instead of merging')).not.toBeChecked();
+    await expect(page.locator('[data-known-words="zh"]').getByLabel('Replace current list instead of merging')).not.toBeChecked();
     await importFile(page, 'replacement.json', replacement);
     await expect(page.getByText('Imported: 1 new, 0 updated')).toBeVisible(); // 阳光 kept: its date is newer
     await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('3 words · 1 known');

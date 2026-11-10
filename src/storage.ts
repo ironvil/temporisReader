@@ -47,6 +47,37 @@ export async function readBytes(path: string): Promise<Uint8Array | null> {
   }
 }
 
+/** Streams a file from disk (for files too big to hold in memory twice), with its size if known. */
+export async function readStream(path: string): Promise<{ stream: ReadableStream<Uint8Array>; size: number } | null> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { uri } = await Filesystem.getUri({ path, directory });
+      const res = await fetch(Capacitor.convertFileSrc(uri));
+      if (!res.ok || !res.body) return null;
+      const size = Number(res.headers.get('content-length')) || (await Filesystem.stat({ path, directory })).size;
+      return { stream: res.body, size };
+    }
+    const { data } = await Filesystem.readFile({ path, directory });
+    const blob = data instanceof Blob ? data : new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))]);
+    return { stream: blob.stream(), size: blob.size };
+  } catch {
+    return null;
+  }
+}
+
+/** Writes binary data. Native goes over the bridge as base64; web stores the Blob directly. */
+export async function writeBytes(path: string, bytes: Uint8Array): Promise<void> {
+  const blob = new Blob([bytes as BlobPart]);
+  if (!Capacitor.isNativePlatform()) return writeBlob(path, blob);
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  await Filesystem.writeFile({ path, directory, data: base64, recursive: true });
+}
+
 /** Web only: Filesystem's web implementation stores Blobs directly. */
 export async function writeBlob(path: string, blob: Blob): Promise<void> {
   await Filesystem.writeFile({ path, directory, data: blob, recursive: true });

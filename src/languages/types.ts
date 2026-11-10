@@ -15,7 +15,7 @@ export interface LookupResult<Entry = unknown> {
   /** Range of the matched word within the paragraph (UTF-16 offsets, end exclusive). */
   start: number;
   end: number;
-  /** The text that was looked up. */
+  /** The word's known-words key (see wordKey); also what the popup's status buttons change. */
   headword: string;
   entries: Entry[];
   /** Short label for the dictionary that answered, shown on the popup (e.g. "CC"). */
@@ -78,12 +78,14 @@ export interface LanguageModule<Entry = unknown> {
   /** True when lookups can be answered without waiting for a dictionary to load. */
   ready(): boolean;
   /**
-   * Whether a segmented word can be tracked as known (it has a dictionary entry). Must return
-   * false while dictionaries aren't loaded, so pages are never bulk-marked from guesses.
+   * The key a segmented word is tracked under in the known-words list, or null when it can't be
+   * tracked (no dictionary entry). Chinese uses the word itself; French uses the dictionary form
+   * (mangeaient → manger). Must return null while dictionaries aren't loaded, so pages are never
+   * bulk-marked from guesses.
    */
-  isTrackable(word: string): boolean;
+  wordKey(word: string): string | null;
   /**
-   * Identifies the data segmentation and isTrackable depend on (e.g. dictionary version), or null
+   * Identifies the data segmentation and wordKey depend on (e.g. dictionary version), or null
    * while it isn't loaded. Cached per-book word counts are rebuilt when it changes.
    */
   segmentationKey(): string | null;

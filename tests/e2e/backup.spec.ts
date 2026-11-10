@@ -14,9 +14,9 @@ async function freshPage(browser: Browser): Promise<Page> {
   return page;
 }
 
-async function download(page: Page, button: string): Promise<{ name: string; text: string }> {
+async function download(page: Page, button: string, scope = 'body'): Promise<{ name: string; text: string }> {
   const pending = page.waitForEvent('download');
-  await page.getByRole('button', { name: button }).click();
+  await page.locator(scope).getByRole('button', { name: button }).click();
   const file = await pending;
   return { name: file.suggestedFilename(), text: await readFile((await file.path())!, 'utf8') };
 }
@@ -78,7 +78,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await page.getByRole('button', { name: 'Settings' }).click();
   const backup = await download(page, 'Back up library');
   expect(backup.name).toMatch(/^temporis-backup-\d{4}-\d{2}-\d{2}\.json$/);
-  const knownBefore = await download(page, 'Export known words');
+  const knownBefore = await download(page, 'Export known words', '[data-known-words="zh"]');
 
   // Fresh install.
   const fresh = await freshPage(browser);
@@ -98,7 +98,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await expect(fresh.locator('.font-size-value')).toHaveText('24px');
   await expect(fresh.getByLabel('Highlight words you don’t know yet')).toBeChecked();
   // Known words are byte-for-byte the same.
-  expect((await download(fresh, 'Export known words')).text).toBe(knownBefore.text);
+  expect((await download(fresh, 'Export known words', '[data-known-words="zh"]')).text).toBe(knownBefore.text);
   // Dictionaries aren't in the backup.
   await expect(fresh.locator('[data-language="zh"] .lang-status')).toHaveText(/^Not added/);
   await fresh.getByRole('button', { name: 'Close settings' }).click();

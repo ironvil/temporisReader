@@ -455,7 +455,7 @@ export class Reader {
     if (!lang || !getSettings().markKnownPrompt || Date.now() - this.pageShownAt < MIN_PAGE_DWELL_MS) return null;
     const store = knownWords(lang.id);
     if (!store.isLoaded || !lang.ready()) return null;
-    const words = wordsToMarkKnown(this.wordsOnPage(this.page), this.pageLookups, (w) => store.level(w), (w) => lang.isTrackable(w));
+    const words = wordsToMarkKnown(this.wordsOnPage(this.page), this.pageLookups, (w) => store.level(w), (w) => lang.wordKey(w));
     return words.length ? { language: lang.id, words } : null;
   }
 
@@ -533,8 +533,9 @@ export class Reader {
     const fresh: Range[] = [];
     const learning: Range[] = [];
     for (const word of this.wordSpansOnPage(this.page)) {
-      if (!lang.isTrackable(word.text)) continue;
-      const level = store.level(word.text);
+      const key = lang.wordKey(word.text);
+      if (key === null) continue;
+      const level = store.level(key);
       if (level === KNOWN) continue;
       const range = this.charRange(word.block, word.start, word.end);
       if (range) (level === undefined ? fresh : learning).push(range);

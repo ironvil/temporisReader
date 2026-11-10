@@ -1,10 +1,12 @@
-import { ChineseLanguage } from './zh';
+import { FrenchLanguage } from './fr';
 import type { LanguageModule } from './types';
+import { ChineseLanguage } from './zh';
 
 export const chinese = new ChineseLanguage();
+export const french = new FrenchLanguage();
 
 /** All supported languages. Add new LanguageModule implementations here. */
-export const languages: LanguageModule[] = [chinese as LanguageModule];
+export const languages: LanguageModule[] = [chinese as LanguageModule, french as LanguageModule];
 
 export function getLanguage(id: string | null | undefined): LanguageModule | null {
   return languages.find((l) => l.id === id) ?? null;
