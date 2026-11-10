@@ -1,11 +1,11 @@
 /**
  * Book scrubber: tap the footer, drag through the whole book, and the reader jumps once the
- * thumb has been still for SCRUB_SETTLE_MS (2 s). Time is controlled with a paused fake clock.
+ * thumb has been still for SCRUB_SETTLE_MS (1 s). Time is controlled with a paused fake clock.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { addChinese, importBook, nextPage, openFirstBook, tapText } from './helpers';
 
-const SETTLE = 2_000;
+const SETTLE = 1_000;
 
 /** Five chapters of different lengths; every paragraph is unique so positions can be checked. */
 function book(): string {
@@ -72,7 +72,7 @@ test('tapping the footer opens and closes the scrubber with chapter-break ticks'
   await expect(scrubber(page)).toBeHidden();
 });
 
-test('dragging only estimates; the jump happens after the thumb settles for 2 seconds', async ({ page }) => {
+test('dragging only estimates; the jump happens after the thumb settles for a second', async ({ page }) => {
   await setUp(page);
   await page.getByRole('button', { name: 'Book position' }).click();
   const target = offsetOf('〔3-30〕');
@@ -96,11 +96,11 @@ test('moving again before it settles restarts the wait and only the last positio
   await setUp(page);
   await page.getByRole('button', { name: 'Book position' }).click();
   await dragTo(page, offsetOf('〔3-10〕'));
-  await page.clock.fastForward(1_500);
+  await page.clock.fastForward(750);
   await dragTo(page, offsetOf('〔5-10〕'));
-  await page.clock.fastForward(1_500); // 3s since the first move, 1.5s since the last
+  await page.clock.fastForward(750); // 1.5s since the first move, 0.75s since the last
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 5');
-  await page.clock.fastForward(500);
+  await page.clock.fastForward(250);
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 5 of 5');
   expect(await visible(page, '〔5-10〕')).toBe(true);
 });

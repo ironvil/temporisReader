@@ -6,7 +6,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Books can also be created empty and built chapter by chapter in the editor: add a chapter from a file or pasted text/markdown, rename, reorder and delete chapters. Reading progress follows its chapter when chapters move.
 - A book is an ordered list of sources; on every change the sources are re-parsed into one index (paragraph offsets, headings, bold/italic marks, chapters).
 - Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator.
-- Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 2 s.
+- Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 1 s.
 - Progress is saved as chapter, paragraph, word (and character offset for exact restore).
 - Languages are added in Settings → Languages, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT.
 - Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.

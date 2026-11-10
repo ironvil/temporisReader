@@ -29,7 +29,7 @@ const SAVE_DELAY = 400;
 /** Pages read for less than this are skipped by the "mark unlooked-up words as known" prompt. */
 export const MIN_PAGE_DWELL_MS = 10_000;
 /** The scrubber jumps once the thumb has been still this long (pagination only happens then). */
-export const SCRUB_SETTLE_MS = 2_000;
+export const SCRUB_SETTLE_MS = 1_000;
 
 /** A place in the current chapter. */
 interface Position {
