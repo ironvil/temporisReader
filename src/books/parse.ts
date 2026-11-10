@@ -4,7 +4,7 @@
  */
 
 /** Bump when parsing rules change so stored indexes are rebuilt from the source file. */
-export const PARSER_VERSION = 2;
+export const PARSER_VERSION = 3;
 
 export type BookFormat = 'txt' | 'md';
 

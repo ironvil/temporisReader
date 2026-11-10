@@ -3,6 +3,8 @@ import { App } from '@capacitor/app';
 import { openBook } from './books/library';
 import { Reader } from './reader/reader';
 import { loadSettings } from './settings';
+import { BookEditorView } from './ui/book-editor';
+import { closeTopDialog } from './ui/dialog';
 import { toast } from './ui/dom';
 import { LibraryView } from './ui/library-view';
 import { SettingsView } from './ui/settings-view';
@@ -37,14 +39,28 @@ async function main() {
     settings.hide();
     if (current === 'library') void library.refresh();
   };
+  const openEditor = (id: string) => void editor.show(id);
+  const closeEditor = () => {
+    editor.hide();
+    void library.refresh();
+  };
 
-  const library = new LibraryView({ onOpen: (id) => void openReader(id), onOpenSettings: openSettings });
+  const library = new LibraryView({ onOpen: (id) => void openReader(id), onEdit: openEditor, onOpenSettings: openSettings });
   const reader = new Reader({ onExit: () => void showLibrary(), onOpenSettings: openSettings });
   const settings = new SettingsView({ onClose: closeSettings });
-  app.append(library.root, reader.root, settings.root);
+  const editor = new BookEditorView({
+    onClose: closeEditor,
+    onRead: (id) => {
+      closeEditor();
+      void openReader(id);
+    },
+  });
+  app.append(library.root, reader.root, settings.root, editor.root);
 
   void App.addListener('backButton', () => {
+    if (closeTopDialog()) return;
     if (settings.isOpen) closeSettings();
+    else if (editor.isOpen) closeEditor();
     else if (current === 'reader') {
       if (!reader.handleBack()) void showLibrary();
     } else void App.exitApp();

@@ -377,9 +377,12 @@ export class Reader {
     if (!book) return;
     const { paragraph, char } = this.position;
     const text = this.blocks[paragraph]?.textContent ?? '';
-    const global = book.index.chapters[this.chapterIndex].start + paragraph;
+    const chapter = book.index.chapters[this.chapterIndex];
+    const global = chapter.start + paragraph;
     const progress: Progress = {
       chapter: this.chapterIndex,
+      source: chapter.source,
+      sourceChapter: chapter.sourceChapter,
       paragraph,
       word: wordIndexAt(this.segmenter, text, char),
       char,

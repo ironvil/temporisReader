@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { buildIndex } from '../../src/books/library';
+import { assembleBook, type SourceMeta } from '../../src/books/library';
 import { buildChapters, decodeText, formatFromFileName, joinLines, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '../../src/books/parse';
 
 test.describe('txt parsing', () => {
@@ -136,13 +136,51 @@ test('buildChapters handles leading text and heading runs', () => {
   ]);
 });
 
-test('buildIndex stores paragraph start offsets into the joined content', () => {
-  const { content, index } = buildIndex(parseBook('第一章\n一二三\n四五', 'txt', 'X'));
+const source = (id: string, title: string, split: boolean): SourceMeta => ({
+  id,
+  title,
+  format: 'txt',
+  fileName: null,
+  split,
+  path: `sources/${id}.txt`,
+  chapterCount: 0,
+  paragraphCount: 0,
+});
+
+test('assembleBook stores paragraph start offsets into the joined content', () => {
+  const { content, index } = assembleBook([{ source: source('a', 'A', true), parsed: parseBook('第一章\n一二三\n四五', 'txt', 'X') }]);
   expect(content).toBe('第一章\n一二三\n四五');
   expect(index.paragraphOffsets).toEqual([0, 4, 8]);
   for (const [i, offset] of index.paragraphOffsets.entries()) {
     expect(content.slice(offset).split('\n')[0]).toBe(content.split('\n')[i]);
   }
+});
+
+test('assembleBook: split sources keep detected chapters, others are one chapter each', () => {
+  const book = source('book', 'Book', true);
+  const one = source('one', 'Extra', false);
+  const empty = source('empty', 'Empty', false);
+  const { content, index } = assembleBook([
+    { source: one, parsed: parseBook('第一章 不是分章\n甲。\n乙。', 'txt', 'Extra') },
+    { source: empty, parsed: parseBook('', 'txt', 'Empty') },
+    { source: book, parsed: parseBook('第一章 一\n丙。\n第二章 二\n丁。', 'txt', 'Book') },
+  ]);
+  expect(content.split('\n')).toEqual(['第一章 不是分章', '甲。', '乙。', '第一章 一', '丙。', '第二章 二', '丁。']);
+  expect(index.chapters).toEqual([
+    { title: 'Extra', start: 0, end: 3, source: 'one', sourceChapter: 0 },
+    { title: '第一章 一', start: 3, end: 5, source: 'book', sourceChapter: 0 },
+    { title: '第二章 二', start: 5, end: 7, source: 'book', sourceChapter: 1 },
+  ]);
+  expect(index.headings).toEqual([0, 3, 5]);
+  expect([one.chapterCount, empty.chapterCount, book.chapterCount]).toEqual([1, 0, 2]);
+});
+
+test('assembleBook offsets inline marks by the source position', () => {
+  const { index } = assembleBook([
+    { source: source('a', 'A', false), parsed: parseBook('一\n\n二', 'md', 'A') },
+    { source: { ...source('b', 'B', false), format: 'md' }, parsed: parseBook('*斜体*', 'md', 'B') },
+  ]);
+  expect(index.marks).toEqual({ 2: [[0, 2, 'i']] });
 });
 
 test.describe('decodeText', () => {

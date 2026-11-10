@@ -523,3 +523,200 @@ progress {
 .dict-row .actions {
   margin-top: 8px;
 }
+
+/* ── Menus, dialogs, forms ───────────────────────────────────── */
+
+.menu-anchor {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  min-width: 200px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:active {
+  background: var(--panel-2);
+}
+.text-btn {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.dialog {
+  width: min(100% - 32px, 520px);
+  max-height: calc(100% - 32px);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--fg);
+}
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+.dialog h2 {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+}
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.dialog-error {
+  color: var(--danger);
+  margin: 12px 0 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field-label {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+input[type='text'],
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-size: 1rem;
+}
+textarea {
+  font: inherit;
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.5;
+}
+input[type='text']:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.file-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.file-name {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.or {
+  margin: 8px 0;
+  font-size: 0.875rem;
+}
+.paste-section .field {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+.button.wide {
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px;
+}
+
+/* ── Book editor ─────────────────────────────────────────────── */
+
+.view.editor {
+  z-index: 10;
+}
+.editor-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px calc(var(--safe-right) + 16px) calc(var(--safe-bottom) + 24px) calc(var(--safe-left) + 16px);
+}
+.editor-content h2 {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 20px 0 8px;
+}
+.title-input {
+  font-size: 1.125rem !important;
+  font-weight: 600;
+}
+.chapter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chapter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.chapter-number {
+  flex: none;
+  width: 1.75em;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chapter-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chapter-main input {
+  padding: 6px 8px;
+  background: transparent;
+  border-color: transparent;
+}
+.chapter-main input:focus {
+  background: var(--panel-2);
+}
+.chapter-details {
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chapter-actions {
+  flex: none;
+  display: flex;
+}
+.chapter-actions .icon-btn {
+  width: 40px;
+  height: 40px;
+}
+.empty-chapters {
+  padding: 16px 0;
+}
+.empty .actions {
+  justify-content: center;
+}
