@@ -469,8 +469,8 @@ progress {
   gap: 4px 10px;
 }
 .zh-hanzi {
-  font-size: 1.6rem;
-  line-height: 1.2;
+  font-size: 1.15rem; /* same as the pinyin */
+  line-height: 1.3;
 }
 .zh-alt {
   font-size: 1.125rem;
