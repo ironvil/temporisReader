@@ -1,5 +1,6 @@
 import { languages } from '../languages';
 import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
+import { decodeText } from '../books/parse';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
 import { knownWords, today } from '../vocab/known-words';
@@ -31,14 +32,16 @@ export class SettingsView {
   }
 
   async show(): Promise<void> {
-    this.root.hidden = false;
+    // Render before showing so stale controls from the last visit are never on screen.
     await this.render();
+    this.root.hidden = false;
   }
 
   hide(): void {
     this.cleanups.forEach((c) => c());
     this.cleanups = [];
     this.root.hidden = true;
+    this.content.replaceChildren();
   }
 
   private async render(): Promise<void> {
@@ -176,7 +179,6 @@ export class SettingsView {
   private async knownWordsRow(lang: LanguageModule): Promise<HTMLElement> {
     const store = knownWords(lang.id);
     await store.load();
-    const counts = store.counts();
     const exportButton = el('button', { type: 'button', class: 'button secondary' }, 'Export known words');
     exportButton.addEventListener('click', async () => {
       try {
@@ -187,16 +189,35 @@ export class SettingsView {
         if (!/cancel/i.test(message)) toast(`Export failed: ${message}`);
       }
     });
+    const summary = el('div', { class: 'muted known-summary' });
+    const updateSummary = () => {
+      const counts = store.counts();
+      summary.textContent = store.size ? `${store.size.toLocaleString()} words · ${counts[3].toLocaleString()} known` : 'None marked yet';
+    };
+    updateSummary();
+
+    const fileInput = el('input', { type: 'file', hidden: true, 'data-testid': `known-words-import-${lang.id}` });
+    const importButton = el('button', { type: 'button', class: 'button secondary' }, 'Import known words');
+    importButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        const { added, updated } = await store.import(decodeText(new Uint8Array(await file.arrayBuffer())));
+        updateSummary();
+        toast(`Imported: ${added.toLocaleString()} new, ${updated.toLocaleString()} updated`);
+      } catch (err) {
+        toast(`Import failed: ${err instanceof SyntaxError ? 'not a JSON file' : err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
     return el(
       'div',
       { class: 'dict-row', 'data-known-words': lang.id },
       el('div', {}, el('strong', {}, 'Known words')),
-      el(
-        'div',
-        { class: 'muted known-summary' },
-        store.size ? `${store.size.toLocaleString()} words · ${counts[3].toLocaleString()} known` : 'None marked yet',
-      ),
-      el('div', { class: 'actions' }, exportButton),
+      summary,
+      el('div', { class: 'actions' }, importButton, exportButton, fileInput),
     );
   }
 

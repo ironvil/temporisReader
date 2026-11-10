@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { parseKnownWords, serializeKnownWords, today } from '../../src/vocab/known-words';
+import { mergeKnownWords, parseKnownWords, serializeKnownWords, today, type KnownWordsFile } from '../../src/vocab/known-words';
 
 const SAMPLE = `{
   "version": 1,
@@ -31,4 +31,33 @@ test('drops malformed entries and rejects non-files', () => {
 
 test('today is the local calendar date', () => {
   expect(today(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+});
+
+test('merge: new words added, newer dates win, ties go to the import', () => {
+  const target: KnownWordsFile = {
+    version: 1,
+    updated: '2026-11-01',
+    words: { 旧: [1, '2026-11-05'], 新: [1, '2026-11-01'], 同: [2, '2026-11-03'], 等: [3, '2026-11-03'] },
+  };
+  const incoming: KnownWordsFile = {
+    version: 1,
+    updated: '2026-11-04',
+    words: { 旧: [3, '2026-11-04'], 新: [3, '2026-11-04'], 同: [3, '2026-11-03'], 等: [3, '2026-11-03'], 加: [0, '2026-11-02'] },
+  };
+  expect(mergeKnownWords(target, incoming, '2026-11-10')).toEqual({ added: 1, updated: 2, unchanged: 2 });
+  expect(target).toEqual({
+    version: 1,
+    updated: '2026-11-10',
+    words: { 旧: [1, '2026-11-05'], 新: [3, '2026-11-04'], 同: [3, '2026-11-03'], 等: [3, '2026-11-03'], 加: [0, '2026-11-02'] },
+  });
+});
+
+test('merge with nothing new leaves updated alone', () => {
+  const target: KnownWordsFile = { version: 1, updated: '2026-11-01', words: { 好: [3, '2026-11-01'] } };
+  expect(mergeKnownWords(target, { version: 1, updated: '2026-11-01', words: { 好: [3, '2026-11-01'] } }, '2026-11-10')).toEqual({
+    added: 0,
+    updated: 0,
+    unchanged: 1,
+  });
+  expect(target.updated).toBe('2026-11-01');
 });

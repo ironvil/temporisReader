@@ -52,6 +52,32 @@ export function parseKnownWords(text: string): KnownWordsFile {
   return { version: 1, updated: typeof data.updated === 'string' ? data.updated : today(), words };
 }
 
+export interface MergeResult {
+  added: number;
+  updated: number;
+  unchanged: number;
+}
+
+/**
+ * Merges `incoming` into `target` (mutating it). For words in both, the entry with the newer
+ * date wins; on the same date the incoming entry wins.
+ */
+export function mergeKnownWords(target: KnownWordsFile, incoming: KnownWordsFile, date = today()): MergeResult {
+  const result: MergeResult = { added: 0, updated: 0, unchanged: 0 };
+  for (const [word, entry] of Object.entries(incoming.words)) {
+    const existing = target.words[word];
+    if (!existing) {
+      target.words[word] = [entry[0], entry[1]];
+      result.added++;
+    } else if (entry[1] >= existing[1] && (entry[0] !== existing[0] || entry[1] !== existing[1])) {
+      target.words[word] = [entry[0], entry[1]];
+      result.updated++;
+    } else result.unchanged++;
+  }
+  if (result.added || result.updated) target.updated = date;
+  return result;
+}
+
 export class KnownWords {
   private file: KnownWordsFile = { version: 1, updated: today(), words: {} };
   private loading: Promise<void> | null = null;
@@ -105,6 +131,15 @@ export class KnownWords {
 
   export(): string {
     return serializeKnownWords(this.file);
+  }
+
+  /** Imports a known-words file (same format as export), merging it into this list. */
+  async import(text: string): Promise<MergeResult> {
+    const incoming = parseKnownWords(text);
+    await this.load();
+    const result = mergeKnownWords(this.file, incoming);
+    if (result.added || result.updated) await this.save();
+    return result;
   }
 
   private save(): Promise<void> {

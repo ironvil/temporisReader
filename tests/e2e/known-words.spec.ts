@@ -84,3 +84,35 @@ test('settings shows when nothing is marked yet', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('None marked yet');
 });
+
+test('import a known-words file to start off with, then look words up', async ({ page }) => {
+  const file = ['{', '  "version": 1,', '  "updated": "2026-11-01",', '  "words": {', '    "头发": [3, "2026-11-01"],', '    "阳光": [1, "2026-11-01"]', '  }', '}', ''].join('\n');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const row = page.locator('[data-known-words="zh"]');
+  await row.getByTestId('known-words-import-zh').setInputFiles({ name: 'known-words.json', mimeType: 'application/json', buffer: Buffer.from(file) });
+  await expect(page.getByText('Imported: 2 new, 0 updated')).toBeVisible();
+  await expect(row.locator('.known-summary')).toHaveText('2 words · 1 known');
+  await page.getByRole('button', { name: 'Close settings' }).click();
+
+  await tapText(page, '头发');
+  await expect(pressed(page)).toHaveText('✓');
+  await tapText(page, '阳光');
+  await expect(pressed(page)).toHaveText('1');
+
+  // Exporting straight back gives the same entries (dates untouched by import).
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await row.getByRole('button', { name: 'Export known words' }).click();
+  const text = await readFile((await (await downloadPromise).path())!, 'utf8');
+  expect(text).toBe(file.replace('"updated": "2026-11-01"', `"updated": "${await todayIn(page)}"`));
+});
+
+test('importing something that is not a known-words file is reported', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const row = page.locator('[data-known-words="zh"]');
+  await row.getByTestId('known-words-import-zh').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('not json') });
+  await expect(page.getByText('Import failed: not a JSON file')).toBeVisible();
+  await row.getByTestId('known-words-import-zh').setInputFiles({ name: 'y.json', mimeType: 'application/json', buffer: Buffer.from('[1]') });
+  await expect(page.getByText('Import failed: Not a known-words file')).toBeVisible();
+  await expect(row.locator('.known-summary')).toHaveText('None marked yet');
+});
