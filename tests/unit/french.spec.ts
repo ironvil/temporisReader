@@ -181,6 +181,20 @@ test.describe('FrenchLanguage', () => {
     expect(new FrenchLanguage(stubDictionary(null)).wordKey('manger')).toBeNull();
   });
 
+  test('cached keys are dropped when the dictionary changes (removed, re-added, updated)', () => {
+    const index = fixtureIndex();
+    let loaded: WiktionaryIndex | null = index;
+    const dict = { revision: 1, isReady: () => !!loaded, entries: (w: string) => loaded?.entries(w) ?? [], has: (w: string) => loaded?.has(w) ?? false };
+    const lang = new FrenchLanguage(dict as unknown as WiktionaryDictionary);
+    expect(lang.wordKey('mangeaient')).toBe('manger');
+    loaded = null;
+    dict.revision++;
+    expect(lang.wordKey('mangeaient')).toBeNull();
+    loaded = index;
+    dict.revision++;
+    expect(lang.wordKey('mangeaient')).toBe('manger');
+  });
+
   test('lookup returns the tapped span, the key, the form’s notes and the lemma’s entries', async () => {
     const text = 'Les belles maisons mangeaient.';
     const result = await fr.lookup(text, text.indexOf('mangeaient') + 3);

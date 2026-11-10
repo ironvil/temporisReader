@@ -127,3 +127,73 @@ test('a failed French download is reported and nothing is installed', async ({ p
   await expect(card.locator('.lang-status')).toContainText('Download failed');
   await expect(card.getByRole('button', { name: 'Add' })).toBeVisible();
 });
+
+test('French stays added after a restart (the saved data loads), and can be removed', async ({ page }) => {
+  await start(page);
+  await addFrench(page);
+  await page.reload();
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+
+  await importBook(page, 'livre.md', frenchBook());
+  await openFirstBook(page);
+  await expect(page.getByRole('dialog')).toHaveCount(0); // no "Add French?" reminder
+  await tapText(page, 'mangeaient');
+  await expect(popup(page).locator('.fr-form')).toHaveText('mangeaient→manger');
+
+  await openLanguageSettings(page, 'fr');
+  const card = page.locator('[data-language="fr"]');
+  await expect(card.locator('[data-dictionary="wiktionary-fr"] .dict-status')).toHaveText('1,123 entries');
+  page.once('dialog', (d) => d.accept());
+  await card.getByRole('button', { name: 'Remove' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Not added · 60 MB download');
+  await closeSettings(page);
+
+  // Without the dictionary, lookups point back to settings and nothing is tracked.
+  await tapText(page, 'maison');
+  await expect(popup(page)).toContainText('French isn’t added yet');
+});
+
+test.describe('percentages and highlighting count every form under its dictionary form', () => {
+  // Trackable: il ×1, manger ×2 (mange, mangeaient) in chapter 1; la ×1, maison ×1 in chapter 2.
+  // "Ils" and the headings aren't in the fixture dictionary.
+  const BOOK = '# Premier\n\nIl mange. Ils mangeaient.\n\n# Second\n\nLa maison.\n';
+
+  async function importKnown(page: Page, words: Record<string, [number, string]>) {
+    await openLanguageSettings(page, 'fr');
+    const file = JSON.stringify({ version: 1, updated: '2026-01-01', words });
+    await page.getByTestId('known-words-import-fr').setInputFiles({ name: 'k.json', mimeType: 'application/json', buffer: Buffer.from(file) });
+    await expect(page.getByText(/^Imported:/)).toBeVisible();
+    await closeSettings(page);
+  }
+
+  test('known % in the library and chapter list', async ({ page }) => {
+    await start(page);
+    await addFrench(page);
+    await importKnown(page, { manger: [3, '2026-01-01'] });
+    await importBook(page, 'court.md', BOOK);
+    await expect(page.locator('.book-known')).toHaveText('40% of words known'); // 2 of 5
+
+    await openFirstBook(page);
+    await page.getByRole('button', { name: 'Chapters' }).click();
+    await expect(page.locator('.toc .toc-known')).toHaveText(['66% known', '0% known']); // 2 of 3, 0 of 2
+  });
+
+  test('highlighting tints every form by its dictionary form’s level', async ({ page }) => {
+    await start(page);
+    await addFrench(page);
+    await importKnown(page, { manger: [1, '2026-01-01'], la: [3, '2026-01-01'] });
+    await importBook(page, 'court.md', BOOK);
+    await openFirstBook(page);
+    await page.locator('.reader').getByRole('button', { name: 'Settings' }).click();
+    await page.getByLabel('Highlight words you don’t know yet').check();
+    await closeSettings(page);
+
+    const highlighted = (name: string) =>
+      page.evaluate((name) => {
+        const h = (CSS as unknown as { highlights: Map<string, Set<Range>> }).highlights.get(name);
+        return h ? [...h].map((r) => r.toString()).sort() : null;
+      }, name);
+    await expect.poll(() => highlighted('word-learning')).toEqual(['mange', 'mangeaient']);
+    expect(await highlighted('word-new')).toEqual(['Il']);
+  });
+});
