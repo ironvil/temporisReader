@@ -4,10 +4,6 @@ const paths = {
   settings:
     '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
-  prev: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
-  next: '<path d="M5 12h14M12 5l7 7-7 7"/>',
-  prevChapter: '<path d="M3 19V5M13 6l-6 6 6 6M7 12h14"/>',
-  nextChapter: '<path d="M17 12H3M11 18l6-6-6-6M21 5v14"/>',
   trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM6.5 17A2.5 2.5 0 0 0 4 19.5 2.5 2.5 0 0 0 6.5 22H20v-5"/>',
 } as const;

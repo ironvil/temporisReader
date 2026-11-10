@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { chineseBook, importBook, openFirstBook, pageIndicator, settled, swipe } from './helpers';
+import { chineseBook, importBook, nextPage, openFirstBook, pageIndicator, settled, swipe } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -42,7 +42,7 @@ test('rejects unsupported files', async ({ page }) => {
   await expect(page.getByText('Only .txt and .md files are supported')).toBeVisible();
 });
 
-test('paginates, turns pages by button and swipe, and crosses chapters', async ({ page }) => {
+test('paginates, turns pages by swipe and keyboard, and crosses chapters', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
 
@@ -51,9 +51,14 @@ test('paginates, turns pages by button and swipe, and crosses chapters', async (
   expect(start.total).toBeGreaterThan(2);
   await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
-  await expect(page.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+  // No page buttons: the bottom bar only shows where you are.
+  await expect(page.locator('.bar.bottom button')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Next page' }).click();
+  // Swiping back on the first page of the book stays put.
+  await swipe(page, 'right');
+  await expect(page.locator('.page-count')).toHaveText(`1 / ${start.total}`);
+
+  await nextPage(page);
   await expect(page.locator('.page-count')).toHaveText(`2 / ${start.total}`);
 
   await swipe(page, 'left');
@@ -61,13 +66,16 @@ test('paginates, turns pages by button and swipe, and crosses chapters', async (
   await swipe(page, 'right');
   await expect(page.locator('.page-count')).toHaveText(`2 / ${start.total}`);
 
-  await page.getByRole('button', { name: 'Next chapter' }).click();
+  // Swiping past the last page of a chapter opens the next chapter.
+  await nextPage(page, start.total - 2);
+  await expect(page.locator('.page-count')).toHaveText(`${start.total} / ${start.total}`);
+  await swipe(page, 'left');
   await expect(page.locator('.chapter-title')).toHaveText('第二章 镜子');
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
   await expect(page.locator('.page-count')).toHaveText(/^1 \/ \d+$/);
 
   // Going back from the first page of a chapter lands on the last page of the previous one.
-  await page.getByRole('button', { name: 'Previous page' }).click();
+  await swipe(page, 'right');
   await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
   await expect(page.locator('.page-count')).toHaveText(`${start.total} / ${start.total}`);
 });
@@ -85,7 +93,7 @@ test('remembers the reading position across restarts', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
   const { total } = await pageIndicator(page);
-  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next page' }).click();
+  await nextPage(page, 3);
   await expect(page.locator('.page-count')).toHaveText(`4 / ${total}`);
 
   // Back to the library flushes progress immediately.
@@ -102,7 +110,9 @@ test('remembers the reading position across restarts', async ({ page }) => {
 test('stores progress as chapter, paragraph and word', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
-  await page.getByRole('button', { name: 'Next chapter' }).click();
+  const { total } = await pageIndicator(page);
+  await nextPage(page, total); // last page of chapter 1, then onto chapter 2
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
   await page.getByRole('button', { name: 'Library' }).click();
   await expect(page.locator('.book-name')).toBeVisible(); // shown only after progress is saved
 
@@ -125,7 +135,7 @@ test('stores progress as chapter, paragraph and word', async ({ page }) => {
 test('changing text size re-paginates and keeps the place', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
   await openFirstBook(page);
-  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Next page' }).click();
+  await nextPage(page, 4);
   await settled(page);
   const before = await pageIndicator(page);
   // The paragraph at the top of the page (it may have started on the previous page).

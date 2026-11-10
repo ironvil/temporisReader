@@ -107,6 +107,11 @@ export async function tapText(page: Page, needle: string, charOffset = 0): Promi
   await page.mouse.click(point.x, point.y);
 }
 
+/** Next page via the keyboard (arrow keys turn pages, like swipes). */
+export async function nextPage(page: Page, times = 1): Promise<void> {
+  for (let i = 0; i < times; i++) await page.keyboard.press('ArrowRight');
+}
+
 export async function swipe(page: Page, direction: 'left' | 'right'): Promise<void> {
   const box = (await page.locator('.page-area').boundingBox())!;
   const y = box.y + box.height / 2;

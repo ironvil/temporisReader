@@ -97,7 +97,6 @@ export class Reader {
   private readonly chapterCountEl: HTMLElement;
   private readonly bookTitle: HTMLElement;
   private readonly chapterTitle: HTMLElement;
-  private readonly navButtons: Record<'prevChapter' | 'prev' | 'next' | 'nextChapter', HTMLButtonElement>;
   private readonly popup: LookupPopup;
 
   private book: OpenBook | null = null;
@@ -126,13 +125,6 @@ export class Reader {
     this.chapterCountEl = el('span', { class: 'chapter-count' });
     const indicator = el('div', { class: 'page-indicator', 'aria-live': 'polite' }, this.pageCountEl, this.chapterCountEl);
 
-    this.navButtons = {
-      prevChapter: iconButton('prevChapter', 'Previous chapter', () => this.prevChapter()),
-      prev: iconButton('prev', 'Previous page', () => this.prev()),
-      next: iconButton('next', 'Next page', () => this.next()),
-      nextChapter: iconButton('nextChapter', 'Next chapter', () => this.nextChapter()),
-    };
-
     this.root = el(
       'section',
       { class: 'view reader', hidden: true },
@@ -144,15 +136,7 @@ export class Reader {
         iconButton('settings', 'Settings', () => callbacks.onOpenSettings()),
       ),
       pageWrap,
-      el(
-        'footer',
-        { class: 'bar bottom' },
-        this.navButtons.prevChapter,
-        this.navButtons.prev,
-        indicator,
-        this.navButtons.next,
-        this.navButtons.nextChapter,
-      ),
+      el('footer', { class: 'bar bottom' }, indicator),
     );
 
     this.bindGestures();
@@ -228,20 +212,6 @@ export class Reader {
     } else this.applyTransform(true);
   }
 
-  nextChapter(): void {
-    if (!this.book) return;
-    if (this.chapterIndex < this.book.index.chapters.length - 1) {
-      this.renderChapter(this.chapterIndex + 1);
-      this.setPage(0);
-    } else this.setPage(this.pageCount - 1);
-  }
-
-  prevChapter(): void {
-    if (!this.book) return;
-    if (this.page === 0 && this.chapterIndex > 0) this.renderChapter(this.chapterIndex - 1);
-    this.setPage(0);
-  }
-
   private setPage(page: number, animate = false, keep?: Position): void {
     this.page = Math.max(0, Math.min(page, this.pageCount - 1));
     this.applyTransform(animate);
@@ -268,12 +238,6 @@ export class Reader {
     this.pageCountEl.textContent = `${this.page + 1} / ${this.pageCount}`;
     this.chapterCountEl.textContent = chapters.length > 1 ? `Chapter ${this.chapterIndex + 1} of ${chapters.length}` : '';
     this.chapterTitle.textContent = chapters.length > 1 ? chapters[this.chapterIndex].title : '';
-    const atStart = this.chapterIndex === 0 && this.page === 0;
-    const atEnd = this.chapterIndex === chapters.length - 1 && this.page === this.pageCount - 1;
-    this.navButtons.prev.disabled = atStart;
-    this.navButtons.prevChapter.disabled = atStart;
-    this.navButtons.next.disabled = atEnd;
-    this.navButtons.nextChapter.disabled = this.chapterIndex === chapters.length - 1 && atEnd;
   }
 
   // ── Rendering & pagination ───────────────────────────────────────────────

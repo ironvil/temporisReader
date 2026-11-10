@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, CEDICT_URL, chineseBook, importBook, openFirstBook, tapText } from './helpers';
+import { addChinese, CEDICT_URL, chineseBook, importBook, nextPage, openFirstBook, tapText } from './helpers';
 
 async function start(page: Page) {
   await page.goto('/');
@@ -143,7 +143,7 @@ test('popup closes on page turn and on Escape', async ({ page }) => {
 
   await tapText(page, '今天');
   await expect(popup).toBeVisible();
-  await page.getByRole('button', { name: 'Next page' }).click();
+  await nextPage(page);
   await expect(popup).toBeHidden();
 });
 
