@@ -65,3 +65,10 @@ which points at `release.jks` and holds its password. Without it, release builds
 Keep a copy of `~/.config/temporis-reader/` somewhere safe (password manager or offline backup).
 Android only installs updates signed with the same key; losing it means uninstalling, which wipes
 the app's data — back up the library from Settings first.
+
+## App icon
+
+The logo (an hourglass behind an open book) lives in `assets/logo/`: `foreground.svg` (adaptive-icon
+foreground on a 108-unit canvas, artwork inside the 66-unit safe circle), `monochrome.svg` (Android 13+
+themed icons) and `background-color.txt`. `npm run icons` renders every launcher size, the splash
+images and `public/favicon.svg` from them.
