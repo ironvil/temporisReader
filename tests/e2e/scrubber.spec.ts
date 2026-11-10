@@ -248,3 +248,52 @@ test('dragging through a huge single-chapter book stays cheap (no layout work pe
   expect(avg).toBeLessThan(5);
   await expect(page.locator('.scrub-detail')).toHaveText(/^Page ≈\d+ of ≈\d+ · 100%$/);
 });
+
+test.describe('looked-up words reset after a jump', () => {
+  const prompt = (page: Page) => page.getByRole('dialog', { name: 'Mark words as known?' });
+
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-10T09:00:00') });
+    await page.clock.pauseAt(new Date('2026-11-10T09:00:01'));
+    await page.goto('/');
+    await expect(page.locator('body[data-ready]')).toBeAttached();
+    await addChinese(page);
+    await importBook(page, 'scrub.txt', book());
+    await openFirstBook(page);
+    await tapText(page, '今天');
+    await expect(page.locator('.lookup-popup .zh-hanzi')).toHaveText('今天');
+    await page.keyboard.press('Escape');
+  });
+
+  test('control: without a jump, the looked-up word is not offered', async ({ page }) => {
+    await page.clock.fastForward(10_000);
+    await nextPage(page);
+    await expect(prompt(page).locator('.word-chip')).not.toHaveText([]);
+    await expect(prompt(page).locator('.word-chip', { hasText: /^今天$/ })).toHaveCount(0);
+  });
+
+  test('a jump to a spot on the same page still clears lookups', async ({ page }) => {
+    const pageBefore = await page.locator('.page-count').textContent();
+    await page.getByRole('button', { name: 'Book position' }).click();
+    await dragTo(page, offsetOf('〔1-2〕')); // second paragraph: still on page 1
+    await page.clock.fastForward(SETTLE);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.page-count')).toHaveText(pageBefore!); // same page
+
+    await page.clock.fastForward(10_000);
+    await nextPage(page);
+    await expect(prompt(page).locator('.word-chip', { hasText: /^今天$/ })).toHaveCount(1);
+  });
+
+  test('a jump to another chapter clears lookups', async ({ page }) => {
+    await page.getByRole('button', { name: 'Book position' }).click();
+    await dragTo(page, offsetOf('〔3-10〕'));
+    await page.clock.fastForward(SETTLE);
+    await expect(page.locator('.chapter-count')).toHaveText('Chapter 3 of 5');
+    await page.keyboard.press('Escape');
+
+    await page.clock.fastForward(10_000);
+    await nextPage(page);
+    await expect(prompt(page).locator('.word-chip', { hasText: /^今天$/ })).toHaveCount(1);
+  });
+});
