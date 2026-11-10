@@ -40,34 +40,34 @@ test('add French, then tapping an inflected form shows its dictionary form', asy
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
   await tapText(page, 'mange ', 2);
-  await expect(popup(page).locator('.fr-form')).toHaveText('mange→manger');
-  await expect(popup(page).locator('.fr-form-note')).toHaveText('verb first/third-person singular present indicative of manger');
-  await expect(popup(page).locator('.fr-word')).toHaveText('manger');
-  await expect(popup(page).locator('.fr-ipa')).toHaveText('/mɑ̃.ʒe/');
+  await expect(popup(page).locator('.wk-form')).toHaveText('mange→manger');
+  await expect(popup(page).locator('.wk-form-note')).toHaveText('verb first/third-person singular present indicative of manger');
+  await expect(popup(page).locator('.wk-word')).toHaveText('manger');
+  await expect(popup(page).locator('.wk-ipa')).toHaveText('/mɑ̃.ʒe/');
   await expect(popup(page).locator('.defs li')).toHaveText(['(transitive) to eat']);
   await expect(popup(page).locator('.lookup-badge')).toHaveText('WK');
 
   // Elision: l’ is its own word, looked up as "le".
   await tapText(page, 'l’homme', 0);
-  await expect(popup(page).locator('.fr-form')).toHaveText('l’→le');
+  await expect(popup(page).locator('.wk-form')).toHaveText('l’→le');
   await tapText(page, 'l’homme', 3);
-  await expect(popup(page).locator('.fr-word')).toHaveText('homme');
-  await expect(popup(page).locator('.fr-form')).toHaveCount(0);
+  await expect(popup(page).locator('.wk-word')).toHaveText('homme');
+  await expect(popup(page).locator('.wk-form')).toHaveCount(0);
 
   // Hyphenated entry and gender/plural from the headword line.
   await tapText(page, 'peut-être', 6);
-  await expect(popup(page).locator('.fr-word')).toHaveText('peut-être');
+  await expect(popup(page).locator('.wk-word')).toHaveText('peut-être');
   await tapText(page, 'maison', 1);
-  await expect(popup(page).locator('.fr-gram')).toHaveText('f (plural maisons)');
+  await expect(popup(page).locator('.wk-gram')).toHaveText('f (plural maisons)');
 
   // A word that is also a form of another word shows both.
   await tapText(page, 'livre', 1);
-  await expect(popup(page).locator('.fr-word')).toHaveText(['livre', 'livrer']);
+  await expect(popup(page).locator('.wk-word')).toHaveText(['livre', 'livrer']);
 
   // The tapped form's own pronunciation, when Wiktionary has one.
   await tapText(page, 'belles', 1);
-  await expect(popup(page).locator('.fr-form')).toHaveText('belles /bɛl/→beau');
-  await expect(popup(page).locator('.fr-form .fr-ipa')).toHaveText(' /bɛl/');
+  await expect(popup(page).locator('.wk-form')).toHaveText('belles /bɛl/→beau');
+  await expect(popup(page).locator('.wk-form .wk-ipa')).toHaveText(' /bɛl/');
 
   // Not in the dictionary.
   await tapText(page, 'lumière', 1);
@@ -138,7 +138,7 @@ test('French stays added after a restart (the saved data loads), and can be remo
   await openFirstBook(page);
   await expect(page.getByRole('dialog')).toHaveCount(0); // no "Add French?" reminder
   await tapText(page, 'mangeaient');
-  await expect(popup(page).locator('.fr-form')).toHaveText('mangeaient→manger');
+  await expect(popup(page).locator('.wk-form')).toHaveText('mangeaient→manger');
 
   await openLanguageSettings(page, 'fr');
   const card = page.locator('[data-language="fr"]');

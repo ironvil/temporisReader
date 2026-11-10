@@ -1,11 +1,12 @@
 /**
- * French → English data from English Wiktionary, via kaikki.org's Wiktextract dump.
+ * Wiktionary data (any language → English) from English Wiktionary, via kaikki.org's Wiktextract
+ * dumps. Every language there has the same JSON shape, so this works for all of them.
  *
- * The dump is ~600 MB of JSON lines (one per word + part of speech). Installing trims every entry
- * to one compact line and sorts them, so the stored file is small and lookups are a binary search
- * over one string (no per-word objects kept in memory).
+ * A dump is hundreds of MB of JSON lines (one per word + part of speech). Installing trims every
+ * entry to one compact line and sorts them, so the stored file is small and lookups are a binary
+ * search over UTF-8 bytes (no per-word objects kept in memory).
  *
- * Compact line (tab-separated, sorted by word in UTF-16 code-unit order):
+ * Compact line (tab-separated, sorted by word in code-point order):
  *   word  pos  head  ipa  senses
  * senses are separated by U+001F; a sense is "gloss" or "gloss U+001E lemma" for inflected forms
  * ("third-person plural imperfect indicative of manger" → manger).
@@ -54,11 +55,14 @@ interface RawEntry {
   senses?: RawSense[];
 }
 
-/** One kaikki.org JSON object → a compact line, or null when there's nothing useful to keep. */
-export function trimEntry(raw: RawEntry): string | null {
+/**
+ * One kaikki.org JSON object → a compact line, or null when there's nothing useful to keep.
+ * `langCode` drops stray entries for other languages (the dumps occasionally include some).
+ */
+export function trimEntry(raw: RawEntry, langCode: string): string | null {
   const word = clean(raw.word);
   const pos = clean(raw.pos);
-  if (!word || (raw.lang_code !== undefined && raw.lang_code !== 'fr')) return null;
+  if (!word || (raw.lang_code !== undefined && raw.lang_code !== langCode)) return null;
 
   const senses: string[] = [];
   for (const s of raw.senses ?? []) {

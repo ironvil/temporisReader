@@ -2,8 +2,8 @@ import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { FrenchLanguage } from '../../src/languages/fr';
 import { FrenchWordSegmenter } from '../../src/languages/fr/segmenter';
-import type { WiktionaryDictionary } from '../../src/languages/fr/wiktionary';
-import { compareWords, parseLine, sortLines, trimEntry, WiktionaryIndex } from '../../src/languages/fr/wiktionary-data';
+import { WiktionaryDictionary } from '../../src/languages/wiktionary/dictionary';
+import { compareWords, parseLine, sortLines, trimEntry, WiktionaryIndex } from '../../src/languages/wiktionary/data';
 import { fakeWiktionary } from '../e2e/helpers';
 
 /** The fixture as installed: trimmed, sorted, indexed. */
@@ -11,7 +11,7 @@ function fixtureIndex(): WiktionaryIndex {
   const lines: string[] = [];
   for (const line of gunzipSync(fakeWiktionary()).toString('utf8').split('\n')) {
     try {
-      const trimmed = trimEntry(JSON.parse(line));
+      const trimmed = trimEntry(JSON.parse(line), 'fr');
       if (trimmed) lines.push(trimmed);
     } catch {
       // the fixture's deliberately broken line
@@ -45,7 +45,7 @@ test.describe('trimEntry', () => {
       head_templates: [{ expansion: 'maison f (plural maisons)' }],
       sounds: [{ audio: 'x.ogg' } as never, { ipa: '/mɛ.zɔ̃/' }],
       senses: [{ glosses: ['house'] }, { glosses: ['business'], raw_glosses: ['(figuratively) business, firm'] }],
-    });
+    }, 'fr');
     expect(parseLine(line!)).toEqual({
       word: 'maison',
       pos: 'noun',
@@ -56,31 +56,31 @@ test.describe('trimEntry', () => {
   });
 
   test('inflected forms point at their dictionary form', () => {
-    const line = trimEntry({ word: 'mangeaient', pos: 'verb', senses: [{ glosses: ['third-person plural imperfect indicative of manger'], form_of: [{ word: 'manger' }] }] });
+    const line = trimEntry({ word: 'mangeaient', pos: 'verb', senses: [{ glosses: ['third-person plural imperfect indicative of manger'], form_of: [{ word: 'manger' }] }] }, 'fr');
     expect(parseLine(line!).senses).toEqual([{ gloss: 'third-person plural imperfect indicative of manger', lemma: 'manger' }]);
   });
 
   test('nested senses keep the most specific gloss', () => {
-    const line = trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: ['parent sense', 'child sense'] }] });
+    const line = trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: ['parent sense', 'child sense'] }] }, 'fr');
     expect(parseLine(line!).senses).toEqual([{ gloss: 'child sense' }]);
   });
 
   test('tabs, newlines and separators inside fields cannot break the format', () => {
-    const line = trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: ['a\tb\nc\u001fd\u001ee'] }] })!;
+    const line = trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: ['a\tb\nc\u001fd\u001ee'] }] }, 'fr')!;
     expect(line.split('\t')).toHaveLength(5);
     expect(parseLine(line).senses).toEqual([{ gloss: 'a b c d e' }]);
   });
 
   test('drops entries with nothing useful or in another language', () => {
-    expect(trimEntry({ word: 'x', pos: 'noun', senses: [] })).toBeNull();
-    expect(trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: [] }] })).toBeNull();
-    expect(trimEntry({ pos: 'noun', senses: [{ glosses: ['y'] }] })).toBeNull();
-    expect(trimEntry({ word: 'Hund', pos: 'noun', lang_code: 'de', senses: [{ glosses: ['dog'] }] })).toBeNull();
+    expect(trimEntry({ word: 'x', pos: 'noun', senses: [] }, 'fr')).toBeNull();
+    expect(trimEntry({ word: 'x', pos: 'noun', senses: [{ glosses: [] }] }, 'fr')).toBeNull();
+    expect(trimEntry({ pos: 'noun', senses: [{ glosses: ['y'] }] }, 'fr')).toBeNull();
+    expect(trimEntry({ word: 'Hund', pos: 'noun', lang_code: 'de', senses: [{ glosses: ['dog'] }] }, 'fr')).toBeNull();
   });
 
   test('caps very long entries', () => {
     const senses = Array.from({ length: 50 }, (_, i) => ({ glosses: [`sense ${i} ${'x'.repeat(500)}`] }));
-    const parsed = parseLine(trimEntry({ word: 'faire', pos: 'verb', senses })!);
+    const parsed = parseLine(trimEntry({ word: 'faire', pos: 'verb', senses }, 'fr')!);
     expect(parsed.senses).toHaveLength(20);
     expect(parsed.senses[0].gloss.length).toBe(300);
   });
@@ -228,5 +228,20 @@ test.describe('FrenchLanguage', () => {
     expect(fr.detect('Aujourd’hui, l’homme mange dans la maison. Il lit un livre, peut-être le plus beau.')).toBeGreaterThan(0.5);
     expect(fr.detect('It was a bright cold day in April, and the clocks were striking thirteen.')).toBeLessThan(0.2);
     expect(fr.detect('今天早上，阳光从高高的窗户里斜斜地照进来。')).toBe(0);
+  });
+});
+
+test.describe('WiktionaryDictionary is configured per language', () => {
+  test('French points at the kaikki.org French extract', () => {
+    const fr = new FrenchLanguage().wiktionary;
+    expect(fr.url).toBe('https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl.gz');
+    expect(fr).toMatchObject({ id: 'wiktionary-fr', name: 'Wiktionary (French)', downloadSize: '60 MB', code: 'fr' });
+  });
+
+  test('another language is just configuration', () => {
+    const de = new WiktionaryDictionary({ code: 'de', language: 'German', downloadSize: '100 MB', coverage: 'about 350,000 words and forms' });
+    expect(de.url).toBe('https://kaikki.org/dictionary/German/kaikki.org-dictionary-German.jsonl.gz');
+    expect(de).toMatchObject({ id: 'wiktionary-de', name: 'Wiktionary (German)', description: 'German → English, about 350,000 words and forms (via kaikki.org)' });
+    expect(trimEntry({ word: 'Hund', pos: 'noun', lang_code: 'de', senses: [{ glosses: ['dog'] }] }, 'de')).toBe('Hund\tnoun\t\t\tdog');
   });
 });

@@ -1,20 +1,20 @@
 /**
- * Measures the trimmed French Wiktionary data the app builds on install:
- *   node scripts/measure-wiktionary.mjs path/to/kaikki.org-dictionary-French.jsonl.gz [out.txt]
+ * Measures the trimmed Wiktionary data the app builds on install, for any language:
+ *   node scripts/measure-wiktionary.mjs path/to/kaikki.org-dictionary-French.jsonl.gz fr [out.txt]
  */
 import { createReadStream, writeFileSync } from 'node:fs';
 import { createGunzip, gzipSync } from 'node:zlib';
 import { createInterface } from 'node:readline';
-import { sortLines, trimEntry, WiktionaryIndex } from '../src/languages/fr/wiktionary-data.ts';
+import { sortLines, trimEntry, WiktionaryIndex } from '../src/languages/wiktionary/data.ts';
 
-const [input, out] = process.argv.slice(2);
+const [input, code = 'fr', out] = process.argv.slice(2);
 const started = Date.now();
 const lines = [];
 let read = 0;
 for await (const line of createInterface({ input: createReadStream(input).pipe(createGunzip()), crlfDelay: Infinity })) {
   if (!line) continue;
   read++;
-  const trimmed = trimEntry(JSON.parse(line));
+  const trimmed = trimEntry(JSON.parse(line), code);
   if (trimmed) lines.push(trimmed);
 }
 const text = sortLines(lines).join('\n') + '\n';
