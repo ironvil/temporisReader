@@ -1,5 +1,6 @@
 import { languages } from '../languages';
 import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
+import { createBackup, parseBackup, restoreBackup } from '../backup';
 import { decodeText } from '../books/parse';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
@@ -53,8 +54,53 @@ export class SettingsView {
       this.readingCard(),
       el('h2', {}, 'Languages'),
       ...languageCards,
+      el('h2', {}, 'Backup'),
+      this.backupCard(),
       el('h2', {}, 'About'),
       el('div', { class: 'card muted' }, `Temporis Reader ${__APP_VERSION__}`),
+    );
+  }
+
+  private backupCard(): HTMLElement {
+    const backupButton = el('button', { type: 'button', class: 'button' }, 'Back up library');
+    backupButton.addEventListener('click', async () => {
+      backupButton.disabled = true;
+      try {
+        const backup = await createBackup();
+        await exportTextFile(`temporis-backup-${today()}.json`, JSON.stringify(backup));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/cancel/i.test(message)) toast(`Backup failed: ${message}`);
+      } finally {
+        backupButton.disabled = false;
+      }
+    });
+
+    const fileInput = el('input', { type: 'file', hidden: true, 'data-testid': 'restore-input' });
+    const restoreButton = el('button', { type: 'button', class: 'button secondary' }, 'Restore from backup');
+    restoreButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        const backup = parseBackup(decodeText(new Uint8Array(await file.arrayBuffer())));
+        const books = backup.library.length;
+        const made = new Date(backup.createdAt).toLocaleString();
+        if (!confirm(`Restore ${books} ${books === 1 ? 'book' : 'books'} from the backup made ${made}? Your current books, reading progress, known words and settings will be replaced.`)) return;
+        await restoreBackup(backup);
+        toast('Restored. Reloading…');
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        toast(`Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    return el(
+      'div',
+      { class: 'card', 'data-backup': '' },
+      el('p', { class: 'muted' }, 'One file with your books, chapters, reading progress, known words and settings. Dictionaries aren’t included: add your languages again after restoring on a new install.'),
+      el('div', { class: 'actions' }, backupButton, restoreButton, fileInput),
     );
   }
 
