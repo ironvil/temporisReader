@@ -41,6 +41,8 @@ interface Gesture {
   x: number;
   y: number;
   dragging: boolean;
+  /** The pointer went down while the lookup popup was open: a tap only closes it. */
+  dismissing: boolean;
 }
 
 interface CaretDocument {
@@ -793,9 +795,20 @@ export class Reader {
 
   private bindGestures(): void {
     const area = this.area;
+    // Any press outside the open popup closes it (header, footer and text alike). Runs before the
+    // page area's own handler, which then treats the press as a dismissal rather than a new lookup.
+    let dismissing = false;
+    this.root.addEventListener(
+      'pointerdown',
+      (e) => {
+        dismissing = this.popup.isOpen && !this.popup.el.contains(e.target as Node);
+        if (dismissing) this.closeLookup();
+      },
+      { capture: true },
+    );
     area.addEventListener('pointerdown', (e) => {
       if (!e.isPrimary || !this.book) return;
-      this.gesture = { x: e.clientX, y: e.clientY, dragging: false };
+      this.gesture = { x: e.clientX, y: e.clientY, dragging: false, dismissing };
     });
     area.addEventListener('pointermove', (e) => {
       const g = this.gesture;
@@ -819,7 +832,7 @@ export class Reader {
           if (dx < 0) this.next();
           else this.prev();
         } else this.applyTransform(true);
-      } else if (Math.hypot(dx, dy) < TAP_SLOP) {
+      } else if (Math.hypot(dx, dy) < TAP_SLOP && !g.dismissing) {
         void this.onTap(e.clientX, e.clientY);
       }
     });

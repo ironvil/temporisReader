@@ -81,7 +81,17 @@ export async function pageIndicator(page: Page): Promise<{ page: number; total: 
 }
 
 /** Taps the first occurrence of `needle` visible on the current page, at character `charOffset` within it. */
+/** Closes the lookup popup the way a reader would: by tapping somewhere else (the header title). */
+export async function dismissLookup(page: Page): Promise<void> {
+  const popup = page.locator('.lookup-popup');
+  if (!(await popup.isVisible())) return;
+  await page.locator('.reader .bar-title').click();
+  await expect(popup).toBeHidden();
+}
+
+/** Taps a character on the current page. An open popup is dismissed first (a tap while it's open only closes it). */
 export async function tapText(page: Page, needle: string, charOffset = 0): Promise<void> {
+  await dismissLookup(page);
   const point = await page.evaluate(
     ({ needle, charOffset }) => {
       const area = document.querySelector('.page-area')!.getBoundingClientRect();

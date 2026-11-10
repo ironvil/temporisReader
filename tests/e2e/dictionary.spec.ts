@@ -194,3 +194,50 @@ test('added language survives restart and can be removed', async ({ page }) => {
   await card.getByRole('button', { name: 'Remove' }).click();
   await expect(card.locator('.lang-status')).toHaveText('Not added · 4 MB download');
 });
+
+test('tapping anywhere outside the open popup only closes it', async ({ page }) => {
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'book.txt', chineseBook());
+  await openFirstBook(page);
+  const popup = page.locator('.lookup-popup');
+  const lookups = page.locator('.lookup-popup .zh-hanzi');
+
+  // Tapping another word closes the popup instead of looking the word up.
+  await tapText(page, '今天');
+  await expect(lookups).toHaveText('今天');
+  const word = await page.evaluate(() => {
+    // Centre of the first character of 头发 that the popup doesn't cover.
+    for (const block of document.querySelectorAll<HTMLElement>('.page-flow [data-block]')) {
+      const node = [...block.childNodes].find((n) => n.textContent?.includes('头发'));
+      if (!(node instanceof Text)) continue;
+      const range = document.createRange();
+      const at = node.data.indexOf('头发');
+      range.setStart(node, at);
+      range.setEnd(node, at + 1);
+      const r = range.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (block.contains(document.elementFromPoint(x, y))) return { x, y };
+    }
+    return null;
+  });
+  expect(word).not.toBeNull();
+  await page.mouse.click(word!.x, word!.y);
+  await expect(popup).toBeHidden();
+  // A second tap on the same spot does look it up.
+  await page.mouse.click(word!.x, word!.y);
+  await expect(lookups).toHaveText('头发');
+
+  // Tapping inside the popup keeps it open.
+  await popup.locator('.lookup-body').click();
+  await expect(popup).toBeVisible();
+
+  // The header and footer close it too, and their buttons still work.
+  await page.locator('.reader .bar-title').click();
+  await expect(popup).toBeHidden();
+  await tapText(page, '今天');
+  await page.locator('.page-indicator').click();
+  await expect(popup).toBeHidden();
+  await expect(page.locator('.scrubber')).toBeVisible();
+});
