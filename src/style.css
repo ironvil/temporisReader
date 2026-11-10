@@ -793,3 +793,7 @@ select:focus {
 .word-chips:focus {
   outline: none;
 }
+.replace-option {
+  margin-top: 8px;
+  font-size: 0.875rem;
+}

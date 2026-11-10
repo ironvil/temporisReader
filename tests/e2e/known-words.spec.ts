@@ -116,3 +116,72 @@ test('importing something that is not a known-words file is reported', async ({ 
   await expect(page.getByText('Import failed: Not a known-words file')).toBeVisible();
   await expect(row.locator('.known-summary')).toHaveText('None marked yet');
 });
+
+test.describe('import with "replace" ticked', () => {
+  const existing = ['{', '  "version": 1,', '  "updated": "2026-11-01",', '  "words": {', '    "头发": [3, "2026-11-01"],', '    "阳光": [1, "2026-11-01"]', '  }', '}', ''].join('\n');
+  const replacement = ['{', '  "version": 1,', '  "updated": "2026-10-01",', '  "words": {', '    "今天": [2, "2026-09-01"],', '    "阳光": [3, "2026-09-01"]', '  }', '}', ''].join('\n');
+
+  async function importFile(page: Page, name: string, text: string) {
+    await page.getByTestId('known-words-import-zh').setInputFiles({ name, mimeType: 'application/json', buffer: Buffer.from(text) });
+  }
+
+  async function exported(page: Page) {
+    const download = page.waitForEvent('download');
+    await page.locator('[data-known-words="zh"]').getByRole('button', { name: 'Export known words' }).click();
+    return readFile((await (await download).path())!, 'utf8');
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await importFile(page, 'existing.json', existing);
+    await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
+  });
+
+  test('clears the list and loads the file exactly', async ({ page }) => {
+    await page.getByLabel('Replace current list instead of merging').check();
+    let message = '';
+    page.once('dialog', (d) => {
+      message = d.message();
+      void d.accept();
+    });
+    await importFile(page, 'replacement.json', replacement);
+    await expect(page.getByText('Replaced: 2 words')).toBeVisible();
+    expect(message).toBe('Replace your 2 known words with the 2 in replacement.json? The current list will be cleared.');
+    await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
+    expect(await exported(page)).toBe(replacement); // 头发 gone, dates and "updated" from the file
+
+    await page.getByRole('button', { name: 'Close settings' }).click();
+    await tapText(page, '头发');
+    await expect(pressed(page)).toHaveCount(0);
+    await tapText(page, '今天');
+    await expect(pressed(page)).toHaveText('2');
+  });
+
+  test('cancelling the confirmation keeps the current list', async ({ page }) => {
+    await page.getByLabel('Replace current list instead of merging').check();
+    page.once('dialog', (d) => void d.dismiss());
+    await importFile(page, 'replacement.json', replacement);
+    await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
+    expect(await exported(page)).toBe(existing.replace('"updated": "2026-11-01"', `"updated": "${await todayIn(page)}"`));
+  });
+
+  test('an invalid file is rejected before anything is cleared', async ({ page }) => {
+    await page.getByLabel('Replace current list instead of merging').check();
+    let asked = false;
+    page.on('dialog', (d) => {
+      asked = true;
+      void d.dismiss();
+    });
+    await importFile(page, 'bad.json', '[1]');
+    await expect(page.getByText('Import failed: Not a known-words file')).toBeVisible();
+    expect(asked).toBe(false);
+    await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
+  });
+
+  test('unticked still merges', async ({ page }) => {
+    await expect(page.getByLabel('Replace current list instead of merging')).not.toBeChecked();
+    await importFile(page, 'replacement.json', replacement);
+    await expect(page.getByText('Imported: 1 new, 0 updated')).toBeVisible(); // 阳光 kept: its date is newer
+    await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('3 words · 1 known');
+  });
+});

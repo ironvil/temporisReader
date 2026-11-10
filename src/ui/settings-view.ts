@@ -3,7 +3,7 @@ import type { Dictionary, DictionaryState, LanguageModule } from '../languages/t
 import { decodeText } from '../books/parse';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
-import { knownWords, today } from '../vocab/known-words';
+import { knownWords, parseKnownWords, today } from '../vocab/known-words';
 import { el, formatBytes, toast } from './dom';
 import { iconButton } from './icons';
 
@@ -197,6 +197,7 @@ export class SettingsView {
     updateSummary();
 
     const fileInput = el('input', { type: 'file', hidden: true, 'data-testid': `known-words-import-${lang.id}` });
+    const replace = el('input', { type: 'checkbox' });
     const importButton = el('button', { type: 'button', class: 'button secondary' }, 'Import known words');
     importButton.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', async () => {
@@ -204,7 +205,17 @@ export class SettingsView {
       fileInput.value = '';
       if (!file) return;
       try {
-        const { added, updated } = await store.import(decodeText(new Uint8Array(await file.arrayBuffer())));
+        const text = decodeText(new Uint8Array(await file.arrayBuffer()));
+        if (replace.checked) {
+          const incoming = parseKnownWords(text); // validate before clearing anything
+          const count = Object.keys(incoming.words).length;
+          if (store.size && !confirm(`Replace your ${store.size.toLocaleString()} known words with the ${count.toLocaleString()} in ${file.name}? The current list will be cleared.`)) return;
+          await store.replace(incoming);
+          updateSummary();
+          toast(`Replaced: ${count.toLocaleString()} words`);
+          return;
+        }
+        const { added, updated } = await store.import(text);
         updateSummary();
         toast(`Imported: ${added.toLocaleString()} new, ${updated.toLocaleString()} updated`);
       } catch (err) {
@@ -218,6 +229,7 @@ export class SettingsView {
       el('div', {}, el('strong', {}, 'Known words')),
       summary,
       el('div', { class: 'actions' }, importButton, exportButton, fileInput),
+      el('label', { class: 'checkbox replace-option' }, replace, el('span', {}, 'Replace current list instead of merging')),
     );
   }
 

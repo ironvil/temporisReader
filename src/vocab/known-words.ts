@@ -178,6 +178,13 @@ export class KnownWords {
     return result;
   }
 
+  /** Replaces the whole list with an already-parsed known-words file (an exact copy, dates included). */
+  async replace(incoming: KnownWordsFile): Promise<void> {
+    await this.load();
+    this.file = { version: 1, updated: incoming.updated, words: { ...incoming.words } };
+    await this.save();
+  }
+
   private save(): Promise<void> {
     const text = serializeKnownWords(this.file);
     this.writeChain = this.writeChain.then(() => writeText(this.path, text)).catch((err) => console.error('Saving known words failed', err));
