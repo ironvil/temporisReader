@@ -1,6 +1,7 @@
 /** Inline SVG icons (Lucide-style, 24px grid, stroke = currentColor). */
 const paths = {
   back: '<path d="M15 18l-6-6 6-6"/>',
+  forward: '<path d="M9 18l6-6-6-6"/>',
   settings:
     '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',

@@ -3,7 +3,7 @@
  * Fixture dictionary words in these books: 今天 早上 阳光 镜子.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, importBook, nextPage, openFirstBook, tapText } from './helpers';
+import { addChinese, closeSettings, importBook, nextPage, openFirstBook, openLanguageSettings, tapText } from './helpers';
 
 const MULTI_PAGE = ['第一章', ...Array.from({ length: 40 }, () => '今天早上，阳光很好。')].join('\n');
 // Chapter 1: 今天 ×2, 阳光 ×1 (3 occurrences). Chapter 2: 镜子 ×1.
@@ -14,11 +14,11 @@ async function start(page: Page, options: { language?: boolean; known?: Record<s
   await expect(page.locator('body[data-ready]')).toBeAttached();
   if (options.language !== false) await addChinese(page);
   if (options.known) {
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await openLanguageSettings(page, 'zh');
     const file = JSON.stringify({ version: 1, updated: '2026-01-01', words: options.known });
     await page.getByTestId('known-words-import-zh').setInputFiles({ name: 'k.json', mimeType: 'application/json', buffer: Buffer.from(file) });
     await expect(page.getByText(/^Imported:/)).toBeVisible();
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
   }
 }
 
@@ -34,7 +34,7 @@ async function setHighlighting(page: Page, on: boolean) {
   const box = page.getByLabel('Highlight words you don’t know yet');
   if (on) await box.check();
   else await box.uncheck();
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
 }
 
 test.describe('highlighting words that aren’t known', () => {
@@ -42,7 +42,7 @@ test.describe('highlighting words that aren’t known', () => {
     await start(page);
     await page.getByRole('button', { name: 'Settings' }).click();
     await expect(page.getByLabel('Highlight words you don’t know yet')).not.toBeChecked();
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
     await importBook(page, 'book.txt', MULTI_PAGE);
     await openFirstBook(page);
     expect(await highlighted(page, 'word-new')).toBeNull();

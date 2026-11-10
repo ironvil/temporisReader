@@ -38,10 +38,14 @@ test('"Open settings" goes to that language in Settings → Languages', async ({
   await importBook(page, 'owl.txt', chineseBook());
   await openBook(page, 'owl');
   await addReminder(page).getByRole('button', { name: 'Open settings' }).click();
+  // Straight to Chinese's own page; back goes to the main Settings page.
+  const settings = page.locator('.view.settings');
+  await expect(settings.locator('.bar-heading')).toHaveText('Chinese');
   const card = page.locator('[data-language="zh"]');
   await expect(card).toBeInViewport();
-  await expect(card).toHaveClass(/focus-flash/);
   await expect(card.locator('.lang-status')).toHaveText(/^Not added/);
+  await settings.getByRole('button', { name: 'Back to settings' }).click();
+  await expect(settings.locator('.bar-heading')).toHaveText('Settings');
 });
 
 test('no reminder once the language is added', async ({ page }) => {

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, chineseBook, dismissLanguageReminder, importBook, openFirstBook, tapText } from './helpers';
+import { addChinese, chineseBook, closeSettings, dismissLanguageReminder, importBook, openFirstBook, openLanguageSettings, tapText } from './helpers';
 
 const todayIn = (page: Page) =>
   page.evaluate(() => {
@@ -69,7 +69,7 @@ test('export known words from settings in the known-words format', async ({ page
   await status(page).getByRole('button', { name: 'Level 2' }).click();
   await expect(pressed(page)).toHaveText('2');
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const row = page.locator('[data-known-words="zh"]');
   await expect(row.locator('.known-summary')).toHaveText('2 words · 1 known');
 
@@ -85,25 +85,25 @@ test('export known words from settings in the known-words format', async ({ page
 });
 
 test('settings shows when nothing is marked yet', async ({ page }) => {
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('None marked yet');
 });
 
 test('import a known-words file to start off with, then look words up', async ({ page }) => {
   const file = ['{', '  "version": 1,', '  "updated": "2026-11-01",', '  "words": {', '    "头发": [3, "2026-11-01"],', '    "阳光": [1, "2026-11-01"]', '  }', '}', ''].join('\n');
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const row = page.locator('[data-known-words="zh"]');
   await row.getByTestId('known-words-import-zh').setInputFiles({ name: 'known-words.json', mimeType: 'application/json', buffer: Buffer.from(file) });
   await expect(page.getByText('Imported: 2 new, 0 updated')).toBeVisible();
   await expect(row.locator('.known-summary')).toHaveText('2 words · 1 known');
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
 
   // 头发 (✓) isn't looked up here: that would move it back to 2 and change the export below.
   await tapText(page, '阳光');
   await expect(pressed(page)).toHaveText('1');
 
   // Exporting straight back gives the same entries (dates untouched by import).
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const downloadPromise = page.waitForEvent('download');
   await row.getByRole('button', { name: 'Export known words' }).click();
   const text = await readFile((await (await downloadPromise).path())!, 'utf8');
@@ -111,7 +111,7 @@ test('import a known-words file to start off with, then look words up', async ({
 });
 
 test('importing something that is not a known-words file is reported', async ({ page }) => {
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const row = page.locator('[data-known-words="zh"]');
   await row.getByTestId('known-words-import-zh').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('not json') });
   await expect(page.getByText('Import failed: not a JSON file')).toBeVisible();
@@ -135,7 +135,7 @@ test.describe('import with "replace" ticked', () => {
   }
 
   test.beforeEach(async ({ page }) => {
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await openLanguageSettings(page, 'zh');
     await importFile(page, 'existing.json', existing);
     await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
   });
@@ -153,7 +153,7 @@ test.describe('import with "replace" ticked', () => {
     await expect(page.locator('[data-known-words="zh"] .known-summary')).toHaveText('2 words · 1 known');
     expect(await exported(page)).toBe(replacement); // 头发 gone, dates and "updated" from the file
 
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
     await tapText(page, '头发');
     await expect(pressed(page)).toHaveCount(0);
     await tapText(page, '今天');

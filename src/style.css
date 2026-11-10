@@ -1039,8 +1039,43 @@ select:focus {
   font-weight: 400;
 }
 
-.card.focus-flash {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  transition: outline-color 0.4s;
+/* Settings → language list */
+.lang-list {
+  padding: 0;
+  overflow: hidden;
+}
+.lang-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.lang-link + .lang-link {
+  border-top: 1px solid var(--line);
+}
+.lang-link:active {
+  background: var(--line);
+}
+.lang-link-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lang-link-status {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.lang-link svg {
+  flex: none;
+  color: var(--muted);
 }

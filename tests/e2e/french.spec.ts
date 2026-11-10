@@ -1,7 +1,7 @@
 /** French: Wiktionary install, detection, lookups by dictionary form, and known words keyed by lemma. */
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { addFrench, frenchBook, importBook, nextPage, openFirstBook, tapText, WIKTIONARY_FR_URL } from './helpers';
+import { addFrench, closeSettings, frenchBook, importBook, nextPage, openFirstBook, openLanguageSettings, tapText, WIKTIONARY_FR_URL } from './helpers';
 
 const popup = (page: Page) => page.locator('.lookup-popup');
 const pressed = (page: Page) => popup(page).locator('.word-status [aria-pressed="true"]');
@@ -13,11 +13,11 @@ async function start(page: Page) {
 
 /** Exports French known words from the reader's Settings. */
 async function exportFrench(page: Page): Promise<Record<string, [number, string]>> {
-  await page.locator('.reader').getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'fr');
   const pending = page.waitForEvent('download');
   await page.locator('[data-known-words="fr"]').getByRole('button', { name: 'Export known words' }).click();
   const text = await readFile((await (await pending).path())!, 'utf8');
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
   return JSON.parse(text).words;
 }
 
@@ -63,6 +63,11 @@ test('add French, then tapping an inflected form shows its dictionary form', asy
   // A word that is also a form of another word shows both.
   await tapText(page, 'livre', 1);
   await expect(popup(page).locator('.fr-word')).toHaveText(['livre', 'livrer']);
+
+  // The tapped form's own pronunciation, when Wiktionary has one.
+  await tapText(page, 'belles', 1);
+  await expect(popup(page).locator('.fr-form')).toHaveText('belles /bɛl/→beau');
+  await expect(popup(page).locator('.fr-form .fr-ipa')).toHaveText(' /bɛl/');
 
   // Not in the dictionary.
   await tapText(page, 'lumière', 1);
@@ -116,7 +121,7 @@ test('the mark-known prompt offers dictionary forms once each, skipping looked-u
 test('a failed French download is reported and nothing is installed', async ({ page }) => {
   await start(page);
   await page.route(WIKTIONARY_FR_URL, (route) => route.fulfill({ status: 200, body: 'not a dictionary', headers: { 'access-control-allow-origin': '*' } }));
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'fr');
   const card = page.locator('[data-language="fr"]');
   await card.getByRole('button', { name: 'Add' }).click();
   await expect(card.locator('.lang-status')).toContainText('Download failed');

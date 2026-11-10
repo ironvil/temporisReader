@@ -66,7 +66,9 @@ async function main() {
 
   void App.addListener('backButton', () => {
     if (closeTopDialog()) return;
-    if (settings.isOpen) closeSettings();
+    if (settings.isOpen) {
+      if (!settings.handleBack()) closeSettings();
+    }
     else if (editor.isOpen) closeEditor();
     else if (current === 'reader') {
       if (!reader.handleBack()) void showLibrary();

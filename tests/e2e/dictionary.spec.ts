@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, CEDICT_URL, chineseBook, importBook, nextPage, openFirstBook, tapText } from './helpers';
+import { addChinese, CEDICT_URL, chineseBook, importBook, nextPage, openFirstBook, openLanguageSettings, tapText } from './helpers';
 
 async function start(page: Page) {
   await page.goto('/');
@@ -161,7 +161,7 @@ test('lookup before adding the language points to settings', async ({ page }) =>
 test('failed download is reported and nothing is installed', async ({ page }) => {
   await start(page);
   await page.route(CEDICT_URL, (route) => route.fulfill({ status: 500, body: 'nope', headers: { 'access-control-allow-origin': '*' } }));
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   await page.locator('[data-language="zh"]').getByRole('button', { name: 'Add' }).click();
   await expect(page.locator('[data-language="zh"] .lang-status')).toHaveText(/^Not added · 4 MB download · Download failed/);
 });
@@ -171,7 +171,7 @@ test('rejects a download that is not CC-CEDICT', async ({ page }) => {
   await page.route(CEDICT_URL, (route) =>
     route.fulfill({ status: 200, body: '<html>captive portal</html>', headers: { 'access-control-allow-origin': '*' } }),
   );
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   await page.locator('[data-language="zh"]').getByRole('button', { name: 'Add' }).click();
   await expect(page.locator('[data-language="zh"] .lang-status')).toContainText('does not look like CC-CEDICT');
 });
@@ -187,7 +187,7 @@ test('added language survives restart and can be removed', async ({ page }) => {
   await tapText(page, '今天');
   await expect(page.locator('.zh-pinyin')).toHaveText('jīntiān');
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const card = page.locator('[data-language="zh"]');
   await expect(card.locator('[data-dictionary="cc-cedict"] .dict-status')).toHaveText(/^1,1\d\d entries · 2026-11-01$/);
   page.once('dialog', (d) => d.accept());

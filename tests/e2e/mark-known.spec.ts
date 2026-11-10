@@ -7,7 +7,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, dismissLanguageReminder, importBook, nextPage, openFirstBook, swipe, tapText } from './helpers';
+import { addChinese, closeSettings, dismissLanguageReminder, importBook, nextPage, openFirstBook, openLanguageSettings, swipe, tapText } from './helpers';
 
 const TODAY = '2026-11-10';
 const MULTI_PAGE = ['第一章', ...Array.from({ length: 40 }, () => '今天早上，阳光很好。'), '她对镜子说。'].join('\n');
@@ -51,10 +51,10 @@ async function setUp(page: Page, book: string, options: { addLanguage?: boolean;
   if (options.addLanguage !== false) await addChinese(page);
   if (options.known) {
     const file = JSON.stringify({ version: 1, updated: '2026-01-01', words: options.known });
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await openLanguageSettings(page, 'zh');
     await page.getByTestId('known-words-import-zh').setInputFiles({ name: 'k.json', mimeType: 'application/json', buffer: Buffer.from(file) });
     await expect(page.getByText(/^Imported:/)).toBeVisible();
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
   }
   await importBook(page, options.name ?? 'book.md', book);
   await openFirstBook(page);
@@ -279,7 +279,7 @@ test('the exported file after marking matches the known-words format', async ({ 
   await prompt(page).getByRole('button', { name: /^Mark \d+ known$/ }).click();
   await expect(page.getByText('Marked 2 words as known')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const download = page.waitForEvent('download');
   await page.locator('[data-known-words="zh"]').getByRole('button', { name: 'Export known words' }).click();
   const text = await readFile((await (await download).path())!, 'utf8');
@@ -323,7 +323,7 @@ test('the prompt can be turned off in settings (on by default)', async ({ page }
   const toggle = page.getByLabel('Offer to mark words I didn’t look up as known');
   await expect(toggle).toBeChecked();
   await toggle.uncheck();
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
 
   await dwell(page, 30_000);
   await nextWithoutPrompt(page);
@@ -339,7 +339,7 @@ test('the prompt can be turned off in settings (on by default)', async ({ page }
   // …and turning it back on brings the prompt back.
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByLabel('Offer to mark words I didn’t look up as known').check();
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
   await dwell(page, 10_000);
   await nextPage(page);
   await expect(prompt(page)).toBeVisible();
@@ -396,7 +396,7 @@ test.describe('looking up a known word moves it back to 2', () => {
     await setUp(page, MULTI_PAGE, { name: 'book.txt', known: { 今天: [3, OLD] } });
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByLabel('Looking up a known word moves it back to 2').uncheck();
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
     await tapText(page, '今天');
     await expect(status(page).getByRole('button', { name: 'Known' })).toHaveAttribute('aria-pressed', 'true');
     expect((await storedKnownWords(page))?.words).toEqual({ 今天: [3, OLD] });
@@ -441,7 +441,7 @@ test.describe('looking up a word not in the list sets it to 1', () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.getByLabel('Looking up a new word sets it to 1').uncheck();
     await expect(page.getByLabel('Looking up a known word moves it back to 2')).toBeChecked();
-    await page.getByRole('button', { name: 'Close settings' }).click();
+    await closeSettings(page);
 
     await tapText(page, '今天');
     await expect(status(page).locator('[aria-pressed="true"]')).toHaveCount(0);

@@ -128,8 +128,17 @@ export class FrenchLanguage implements LanguageModule<FrenchLookup> {
     const root = el('div', { class: 'fr-lookup', lang: this.htmlLang });
     for (const { surface, own, lemmas } of result.entries) {
       if (normalizeApostrophes(surface).toLowerCase() !== result.headword.toLowerCase()) {
+        // The form's own pronunciation, when Wiktionary has one (many inflected forms don't).
+        const ipa = own.find((e) => e.ipa)?.ipa;
         root.append(
-          el('div', { class: 'fr-form' }, el('span', {}, surface), el('span', { class: 'fr-arrow', 'aria-label': 'form of' }, '→'), el('strong', {}, result.headword)),
+          el(
+            'div',
+            { class: 'fr-form' },
+            el('span', {}, surface),
+            ipa ? el('span', { class: 'fr-ipa' }, ` ${ipa}`) : null,
+            el('span', { class: 'fr-arrow', 'aria-label': 'form of' }, '→'),
+            el('strong', {}, result.headword),
+          ),
         );
       }
       // Inflection notes first ("third-person plural imperfect indicative of manger"), then full entries.

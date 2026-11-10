@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { devices, expect, test, type Browser, type Page } from '@playwright/test';
-import { addChinese, chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook } from './helpers';
+import { addChinese, chineseBook, closeSettings, dismissLanguageReminder, importBook, nextPage, openFirstBook, openLanguageSettings } from './helpers';
 
 async function freshPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...devices['Pixel 7'], baseURL: test.info().project.use.baseURL });
@@ -36,12 +36,13 @@ const KNOWN = ['{', '  "version": 1,', '  "updated": "2026-11-01",', '  "words":
 /** Builds a library with an imported book (read to page 3), a composed book, known words and settings. */
 async function buildLibrary(page: Page): Promise<{ totalPages: number }> {
   await addChinese(page);
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   await page.getByTestId('known-words-import-zh').setInputFiles({ name: 'k.json', mimeType: 'application/json', buffer: Buffer.from(KNOWN) });
   await expect(page.getByText(/^Imported:/)).toBeVisible();
+  await page.getByRole('button', { name: 'Back to settings' }).click();
   await page.getByRole('button', { name: 'Larger text' }).click(); // 24px
   await page.getByLabel('Highlight words you don’t know yet').check();
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
 
   await importBook(page, '猫头鹰.txt', chineseBook());
   await openFirstBook(page);
@@ -78,6 +79,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await page.getByRole('button', { name: 'Settings' }).click();
   const backup = await download(page, 'Back up library');
   expect(backup.name).toMatch(/^temporis-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  await openLanguageSettings(page, 'zh');
   const knownBefore = await download(page, 'Export known words', '[data-known-words="zh"]');
 
   // Fresh install.
@@ -98,10 +100,11 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await expect(fresh.locator('.font-size-value')).toHaveText('24px');
   await expect(fresh.getByLabel('Highlight words you don’t know yet')).toBeChecked();
   // Known words are byte-for-byte the same.
+  await openLanguageSettings(fresh, 'zh');
   expect((await download(fresh, 'Export known words', '[data-known-words="zh"]')).text).toBe(knownBefore.text);
   // Dictionaries aren't in the backup.
   await expect(fresh.locator('[data-language="zh"] .lang-status')).toHaveText(/^Not added/);
-  await fresh.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(fresh);
 
   // Reading position restored.
   await fresh.locator('.book-open', { hasText: '猫头鹰' }).click();
@@ -141,10 +144,10 @@ test('cancelling the restore changes nothing', async ({ page }) => {
   await importBook(page, 'keep.txt', '保留。');
   await page.getByRole('button', { name: 'Settings' }).click();
   const backup = await download(page, 'Back up library');
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
   await importBook(page, 'second.txt', '第二本。');
   await restore(page, backup.text, false);
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
   await expect(page.locator('.book-name')).toHaveText(['second', 'keep']);
 });
 
@@ -170,7 +173,7 @@ test('invalid backups are rejected before anything is touched', async ({ page })
     await expect(page.getByText(error)).toBeVisible();
   }
   expect(asked).toBe(false);
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
   await expect(page.locator('.book-name')).toHaveText('keep');
 });
 

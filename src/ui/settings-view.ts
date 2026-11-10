@@ -6,24 +6,32 @@ import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
 import { knownWords, parseKnownWords, today } from '../vocab/known-words';
 import { el, formatBytes, toast } from './dom';
-import { iconButton } from './icons';
+import { icon, iconButton } from './icons';
 
+/**
+ * Settings, as two levels: the main page (reading options, a list of languages, backup) and one
+ * page per language (dictionaries, add/remove, known words). Back on a language page returns to
+ * the main page; back on the main page closes settings.
+ */
 export class SettingsView {
   readonly root: HTMLElement;
   private readonly content: HTMLElement;
+  private readonly heading: HTMLElement;
+  private readonly backButton: HTMLButtonElement;
   private cleanups: (() => void)[] = [];
+  /** The language whose page is showing, or null on the main page. */
+  private language: string | null = null;
 
   constructor(private readonly callbacks: { onClose(): void }) {
     this.content = el('main', { class: 'settings-content' });
+    this.heading = el('h1', { class: 'bar-heading' }, 'Settings');
+    this.backButton = iconButton('back', 'Close settings', () => {
+      if (!this.handleBack()) this.callbacks.onClose();
+    });
     this.root = el(
       'section',
       { class: 'view settings', hidden: true, role: 'dialog', 'aria-label': 'Settings' },
-      el(
-        'header',
-        { class: 'bar top' },
-        iconButton('back', 'Close settings', () => this.callbacks.onClose()),
-        el('h1', { class: 'bar-heading' }, 'Settings'),
-      ),
+      el('header', { class: 'bar top' }, this.backButton, this.heading),
       this.content,
     );
   }
@@ -32,40 +40,93 @@ export class SettingsView {
     return !this.root.hidden;
   }
 
-  /** `focusLanguage`: scroll to (and briefly highlight) that language's card. */
-  async show(focusLanguage?: string): Promise<void> {
+  /** Opens the main page, or `language`'s page directly. */
+  async show(language?: string): Promise<void> {
     // Render before showing so stale controls from the last visit are never on screen.
-    await this.render();
+    await this.render(language ?? null);
     this.root.hidden = false;
-    if (focusLanguage) {
-      const card = this.content.querySelector<HTMLElement>(`[data-language="${focusLanguage}"]`);
-      card?.scrollIntoView({ block: 'center' });
-      card?.classList.add('focus-flash');
-      setTimeout(() => card?.classList.remove('focus-flash'), 1600);
-    }
+  }
+
+  /** Back from a language page to the main page. Returns false on the main page (caller closes). */
+  handleBack(): boolean {
+    if (this.language === null) return false;
+    void this.render(null);
+    return true;
   }
 
   hide(): void {
     this.cleanups.forEach((c) => c());
     this.cleanups = [];
     this.root.hidden = true;
+    this.language = null;
     this.content.replaceChildren();
   }
 
-  private async render(): Promise<void> {
+  private async render(language: string | null): Promise<void> {
+    const lang = languages.find((l) => l.id === language) ?? null;
+    const children = lang ? [await this.languageCard(lang)] : await this.mainPage();
     this.cleanups.forEach((c) => c());
     this.cleanups = [];
-    const languageCards = await Promise.all(languages.map((lang) => this.languageCard(lang)));
-    this.content.replaceChildren(
+    this.language = lang?.id ?? null;
+    this.heading.textContent = lang ? lang.name : 'Settings';
+    this.backButton.setAttribute('aria-label', lang ? 'Back to settings' : 'Close settings');
+    this.backButton.title = this.backButton.getAttribute('aria-label')!;
+    this.content.replaceChildren(...children);
+    this.content.scrollTop = 0;
+    this.cleanups.push(...this.pendingCleanups.splice(0));
+  }
+
+  /** Listeners registered while building a page, adopted once it's shown. */
+  private pendingCleanups: (() => void)[] = [];
+
+  private async mainPage(): Promise<HTMLElement[]> {
+    const rows = await Promise.all(languages.map((lang) => this.languageLink(lang)));
+    return [
       el('h2', {}, 'Reading'),
       this.readingCard(),
       el('h2', {}, 'Languages'),
-      ...languageCards,
+      el('div', { class: 'card lang-list' }, ...rows),
       el('h2', {}, 'Backup'),
       this.backupCard(),
       el('h2', {}, 'About'),
       el('div', { class: 'card muted' }, `Temporis Reader ${__APP_VERSION__}`),
+    ];
+  }
+
+  /** A row on the main page that opens the language's page, with its status. */
+  private async languageLink(lang: LanguageModule): Promise<HTMLElement> {
+    const status = el('span', { class: 'lang-link-status' });
+    const store = knownWords(lang.id);
+    await store.load();
+    const refresh = async () => {
+      const busy = lang.dictionaries.some((d) => {
+        const p = d.installProgress();
+        return p && (p.phase === 'downloading' || p.phase === 'processing');
+      });
+      const added = (await Promise.all(lang.dictionaries.map((d) => d.state()))).every((s) => s.installed);
+      const known = store.size ? ` · ${store.counts()[3].toLocaleString()} known words` : '';
+      status.textContent = busy ? 'Adding…' : added ? `Added${known}` : `Not added${known}`;
+    };
+    await refresh();
+    // An install keeps going after leaving the language's page; report how it ends from here too.
+    for (const d of lang.dictionaries) {
+      this.pendingCleanups.push(
+        d.onProgress((p) => {
+          if (p.phase === 'error') toast(`${lang.name}: download failed`);
+          if (p.phase === 'done') toast(`${d.name} installed`);
+          void refresh();
+        }),
+      );
+    }
+
+    const button = el(
+      'button',
+      { type: 'button', class: 'lang-link', 'data-language-link': lang.id, 'aria-label': lang.name },
+      el('span', { class: 'lang-link-text' }, el('span', { class: 'lang-name' }, `${lang.name} · ${lang.nativeName}`), status),
+      icon('forward'),
     );
+    button.addEventListener('click', () => void this.render(lang.id));
+    return button;
   }
 
   private backupCard(): HTMLElement {
@@ -229,7 +290,7 @@ export class SettingsView {
     };
 
     for (const d of lang.dictionaries) {
-      this.cleanups.push(
+      this.pendingCleanups.push(
         d.onProgress((p) => {
           if (p.phase === 'error') {
             lastError = p.error ?? 'Unknown error';

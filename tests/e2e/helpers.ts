@@ -42,7 +42,7 @@ export function fakeWiktionary(): Buffer {
     entry('livre', 'verb', [formOf('first/third-person singular present indicative of livrer', 'livrer')]),
     entry('livrer', 'verb', [sense('to deliver')]),
     entry('beau', 'adj', [sense('beautiful, handsome')], { head_templates: [{ expansion: 'beau (feminine belle, masculine plural beaux, feminine plural belles)' }] }),
-    entry('belles', 'adj', [formOf('feminine plural of beau', 'beau')]),
+    entry('belles', 'adj', [formOf('feminine plural of beau', 'beau')], { sounds: [{ ipa: '/bɛl/' }] }),
     entry('le', 'article', [sense('the (definite article)')]),
     entry("l'", 'article', [formOf('apocopic form of le, la: the', 'le')]),
     entry('homme', 'noun', [sense('man')]),
@@ -80,11 +80,11 @@ export async function addFrench(page: Page): Promise<void> {
   await page.route(WIKTIONARY_FR_URL, (route) =>
     route.fulfill({ status: 200, contentType: 'application/octet-stream', body: fakeWiktionary(), headers: { 'access-control-allow-origin': '*' } }),
   );
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'fr');
   const card = page.locator('[data-language="fr"]');
   await card.getByRole('button', { name: 'Add' }).click();
   await expect(card.locator('.lang-status')).toHaveText('Added');
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
 }
 
 export function chineseBook(): string {
@@ -125,11 +125,29 @@ export async function addChinese(page: Page): Promise<void> {
   await page.route(CEDICT_URL, (route) =>
     route.fulfill({ status: 200, contentType: 'application/x-gzip', body: fakeCedict(), headers: { 'access-control-allow-origin': '*' } }),
   );
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openLanguageSettings(page, 'zh');
   const card = page.locator('[data-language="zh"]');
   await card.getByRole('button', { name: 'Add' }).click();
   await expect(card.locator('.lang-status')).toHaveText('Added');
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  await closeSettings(page);
+}
+
+/** Settings → Languages → that language's page (opening Settings first if needed). */
+export async function openLanguageSettings(page: Page, language: string): Promise<void> {
+  const settings = page.locator('.view.settings');
+  if (!(await settings.isVisible())) await page.locator('.view:not([hidden])').getByRole('button', { name: 'Settings', exact: true }).click();
+  if (await settings.getByRole('button', { name: 'Back to settings' }).isVisible()) await settings.getByRole('button', { name: 'Back to settings' }).click();
+  await settings.locator(`[data-language-link="${language}"]`).click();
+  await expect(settings.locator(`[data-language="${language}"]`)).toBeVisible();
+}
+
+/** Closes Settings from either level. */
+export async function closeSettings(page: Page): Promise<void> {
+  const settings = page.locator('.view.settings');
+  const back = settings.getByRole('button', { name: 'Back to settings' });
+  if (await back.isVisible()) await back.click();
+  await settings.getByRole('button', { name: 'Close settings' }).click();
+  await expect(settings).toBeHidden();
 }
 
 /** Waits for page-turn animations to finish so geometry is stable. */
