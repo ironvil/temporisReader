@@ -14,8 +14,8 @@
   --tone-3: #1565c0;
   --tone-4: #8e24aa;
   --tone-5: #757575;
-  --hl-new: rgb(30 111 224 / 0.16);
-  --hl-learning: rgb(230 160 0 / 0.28);
+  --hl-new: rgb(30 111 224 / 0.26);
+  --hl-learning: rgb(240 160 0 / 0.4);
   --reader-font-size: 22px;
   --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
@@ -38,13 +38,13 @@
     --tone-3: #5aa9ff;
     --tone-4: #e26cff;
     --tone-5: #a0a0a0;
-    --hl-new: rgb(80 150 255 / 0.22);
-    --hl-learning: rgb(255 190 40 / 0.26);
+    --hl-new: rgb(70 140 255 / 0.45);
+    --hl-learning: rgb(255 176 32 / 0.5);
   }
 }
 :root[data-theme='dark'] {
-  --hl-new: rgb(80 150 255 / 0.22);
-  --hl-learning: rgb(255 190 40 / 0.26);
+  --hl-new: rgb(70 140 255 / 0.45);
+  --hl-learning: rgb(255 176 32 / 0.5);
   color-scheme: dark;
   --bg: #000000;
   --fg: #f2f2f2;
@@ -258,8 +258,9 @@ a {
   color: var(--muted);
 }
 .book-known {
-  font-size: 0.8125rem;
-  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fg);
 }
 .book-known:empty {
   display: none;
@@ -950,6 +951,13 @@ select:focus {
 }
 .toc-head h2 {
   margin: 0;
+}
+.toc-book-known {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.toc-book-known:empty {
+  display: none;
 }
 .toc-list {
   list-style: none;

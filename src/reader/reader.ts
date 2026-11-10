@@ -520,7 +520,10 @@ export class Reader {
       return el('li', {}, button);
     });
     const close = iconButton('close', 'Close chapters', () => dialog.close());
-    dialog.append(el('div', { class: 'toc-head' }, el('h2', {}, 'Chapters'), close), el('ol', { class: 'toc-list' }, ...items));
+    dialog.append(
+      el('div', { class: 'toc-head' }, el('div', {}, el('h2', {}, 'Chapters'), el('div', { class: 'toc-book-known' })), close),
+      el('ol', { class: 'toc-list' }, ...items),
+    );
     dialog.addEventListener('close', () => dialog.remove());
     document.body.append(dialog);
     dialog.showModal();
@@ -535,6 +538,8 @@ export class Reader {
     await store.load();
     const counts = await bookWordCounts(book.meta.id, lang, book);
     if (!counts) return;
+    const whole = dialog.querySelector('.toc-book-known');
+    if (whole) whole.textContent = `Whole book: ${formatShare(knownShare(counts, (w) => store.level(w)))} of words known`;
     counts.forEach((chapter, i) => {
       const target = dialog.querySelector(`.toc-known[data-chapter="${i}"]`);
       if (target) target.textContent = `${formatShare(knownShare([chapter], (w) => store.level(w)))} known`;

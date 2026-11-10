@@ -136,19 +136,31 @@ export class LibraryView {
 
   /** Fills in "N% of words known" per book once dictionaries and known words are loaded. */
   private async fillKnownShares(books: BookMeta[]): Promise<void> {
+    const target = (id: string) => this.list.querySelector<HTMLElement>(`.book-known[data-book="${id}"]`);
+    // Placeholders first, so it's clear where the number will appear (the first count of a long book takes a moment).
+    const eligible: BookMeta[] = [];
     for (const book of books) {
       const lang = getLanguage(book.language);
       if (!lang || !book.chapterCount) continue;
+      const states = await Promise.all(lang.dictionaries.map((d) => d.state()));
+      if (!states.every((s) => s.installed)) continue;
+      eligible.push(book);
+      const el = target(book.id);
+      if (el && !el.textContent) el.textContent = 'Counting known words…';
+    }
+    for (const book of eligible) {
+      const lang = getLanguage(book.language)!;
       try {
         const ready = (await Promise.all(lang.dictionaries.map((d) => d.ensureLoaded()))).every(Boolean);
-        if (!ready) continue;
         const store = knownWords(lang.id);
         await store.load();
-        const counts = await bookWordCounts(book.id, lang);
-        const target = this.list.querySelector<HTMLElement>(`.book-known[data-book="${book.id}"]`);
-        if (counts && target) target.textContent = `${formatShare(knownShare(counts, (w) => store.level(w)))} of words known`;
+        const counts = ready ? await bookWordCounts(book.id, lang) : null;
+        const el = target(book.id);
+        if (el) el.textContent = counts ? `${formatShare(knownShare(counts, (w) => store.level(w)))} of words known` : '';
       } catch (err) {
         console.error('Known share failed', err);
+        const el = target(book.id);
+        if (el) el.textContent = '';
       }
     }
   }

@@ -144,6 +144,7 @@ test.describe('chapter list', () => {
     await expect(list(page).locator('.toc-title')).toHaveText(['一', '二']);
     await expect(list(page).locator('.toc-item[aria-current="true"] .toc-title')).toHaveText('一');
     await expect(list(page).locator('.toc-known')).toHaveText(['66% known', '0% known']);
+    await expect(list(page).locator('.toc-book-known')).toHaveText('Whole book: 50% of words known');
   });
 
   test('tapping a chapter jumps to its first page', async ({ page }) => {
