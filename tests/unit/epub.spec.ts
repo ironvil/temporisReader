@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { readdirSync } from 'node:fs';
@@ -6,7 +6,9 @@ import { assembleBook, parseEpub, readEpubParagraphs, resolveHref, tokenize } fr
 import { type SourceMeta } from '../../src/books/library';
 
 const CHINESE = 'Ha Li _Bo Te Yu Li Xing Zhi Dao - Eliezer Yudkowsky.epub';
+// The real EPUBs are downloaded by `npm run setup:test-books`, not kept in the repo.
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../test epubs/${name}`, import.meta.url)));
+const hasChinese = existsSync(new URL(`../test epubs/${CHINESE}`, import.meta.url));
 
 /** A minimal ZIP writer (deflate, or stored for `mimetype`), enough to build test EPUBs. */
 export function zip(files: Record<string, string | Uint8Array>): Uint8Array {
@@ -156,6 +158,7 @@ test.describe('real EPUBs', () => {
   });
 
   test('Chinese: a Calibre EPUB 2 with ~720 split files, an NCX and a wrong language tag', async () => {
+    test.skip(!hasChinese, 'No copy of the Chinese HPMOR EPUB (npm run setup:test-books explains)');
     const book = await parseEpub(fixture(CHINESE), 'fallback');
     expect(book.title).toBe('哈利·波特与理性之道');
     expect(book.author).toBe('Eliezer Yudkowsky');
@@ -250,7 +253,7 @@ test('scene breaks: a contents list still ends at a * * *, and Gutenberg’s hea
 
 test.describe('reading one chapter from its own files', () => {
   // Every chapter of every test EPUB, read alone, is exactly what the full parse gives.
-  for (const name of readdirSync(new URL('../test epubs/', import.meta.url))) {
+  for (const name of readdirSync(new URL('../test epubs/', import.meta.url)).filter((n) => n.endsWith('.epub'))) {
     test(name, async () => {
       const bytes = fixture(name);
       const book = await parseEpub(bytes, 'x');

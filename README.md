@@ -87,6 +87,7 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$P
 
 ```sh
 npm run dev        # web dev server
+npm run setup:test-books  # once: download the EPUBs the tests use into tests/test epubs/
 npm run typecheck  # tsc
 npm test           # unit + Playwright e2e tests against the production web build
 npm run test:ui    # same, in Playwright's interactive UI
@@ -94,6 +95,10 @@ npm run test:android  # Android tests on an emulator (see below)
 npm run apk        # build + cap sync + debug APK -> android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The real EPUBs the tests read (Project Gutenberg books and HPMOR) aren't in the repo: `npm run setup:test-books`
+downloads them and checks their SHA-256 (`scripts/fetch-test-epubs.mjs`). The Chinese HPMOR translation has no
+public download, so it's copied in by hand; without it, the tests that need it are skipped.
 
 E2E tests intercept the CC-CEDICT download and serve a small fixture, so they never hit MDBG.
 

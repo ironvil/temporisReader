@@ -12,6 +12,7 @@
     "typecheck": "tsc",
     "check:parser-version": "node scripts/check-parser-version.mjs",
     "apk:release": "npm run sync && node scripts/gradle.mjs assembleRelease",
+    "setup:test-books": "node scripts/fetch-test-epubs.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "test:android": "node scripts/android-test.mjs"
   },

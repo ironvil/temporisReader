@@ -5,6 +5,8 @@ dist/
 .idea/
 .vscode/
 test-results/
+# Downloaded by npm run setup:test-books (not ours to redistribute)
+tests/test epubs/
 playwright-report/
 blob-report/
 playwright/.cache/

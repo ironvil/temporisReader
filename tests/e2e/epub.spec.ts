@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { assembleBook, parseEpub, PARSER_VERSION } from '@temporis/book-parser';
 import { dismissLanguageReminder, nextPage, withStorage } from './helpers';
@@ -8,7 +8,9 @@ const FAUST = 'pg2229-images-3.epub';
 const CHINESE = 'Ha Li _Bo Te Yu Li Xing Zhi Dao - Eliezer Yudkowsky.epub';
 /** Has paragraphs of only `* * *`, which parser version 4 kept as text. */
 const KANT = 'pg6343-images-3.epub';
+// The real EPUBs are downloaded by `npm run setup:test-books`, not kept in the repo.
 const fixture = (name: string) => readFileSync(new URL(`../test epubs/${name}`, import.meta.url));
+const hasChinese = existsSync(new URL(`../test epubs/${CHINESE}`, import.meta.url));
 
 async function importEpub(page: Page, name: string, as = name): Promise<void> {
   await page.getByTestId('import-input').setInputFiles({ name: as, mimeType: 'application/epub+zip', buffer: fixture(name) });
@@ -89,6 +91,7 @@ test('an EPUB is imported as metadata only, with its title, author and language'
 });
 
 test('a Chinese EPUB tagged "en" is detected as Chinese and opens at its first chapter', async ({ page }) => {
+  test.skip(!hasChinese, 'No copy of the Chinese HPMOR EPUB (npm run setup:test-books explains)');
   await importEpub(page, CHINESE);
   await expect(page.getByText('Imported “哈利·波特与理性之道”')).toBeVisible();
   await expect(page.locator('.book-details')).toHaveText('Eliezer Yudkowsky · Not started · 128 chapters · Chinese');
@@ -205,6 +208,7 @@ test.describe('a book read before scene breaks keeps its exact place', () => {
 });
 
 test('a big EPUB opens at its saved chapter first; the rest loads in the background', async ({ page }) => {
+  test.skip(!hasChinese, 'No copy of the Chinese HPMOR EPUB (npm run setup:test-books explains)');
   await importEpub(page, CHINESE);
   await expect(page.getByText(/^Imported/)).toBeVisible();
   // Saved in chapter 60, as if read there before.
