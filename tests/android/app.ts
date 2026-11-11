@@ -107,18 +107,44 @@ export class App {
   }
 }
 
-export const test = base.extend<{ app: App }, { device: AndroidDevice }>({
-  device: [
+/**
+ * The adb connection, shared by a worker's tests. Playwright closes a device for good when one of
+ * its background adb calls (it looks for WebViews every 500 ms) fails, as adb now and then does;
+ * a test after that would only see "Device is closed", so each test checks and connects again.
+ */
+class Connection {
+  private device: AndroidDevice | null = null;
+  private closed = false;
+
+  async live(): Promise<AndroidDevice> {
+    if (this.device && !this.closed) return this.device;
+    if (!SERIAL) throw new Error('TEMPORIS_ANDROID_SERIAL isn’t set: run these with `npm run test:android`');
+    const device = (await _android.devices()).find((d) => d.serial() === SERIAL);
+    if (!device) throw new Error(`No device ${SERIAL}`);
+    device.setDefaultTimeout(20_000);
+    this.closed = false;
+    device.once('close', () => (this.closed = true));
+    this.device = device;
+    return device;
+  }
+
+  async close(): Promise<void> {
+    if (this.device && !this.closed) await this.device.close();
+  }
+}
+
+export const test = base.extend<{ app: App; device: AndroidDevice }, { connection: Connection }>({
+  connection: [
     async ({}, use) => {
-      if (!SERIAL) throw new Error('TEMPORIS_ANDROID_SERIAL isn’t set: run these with `npm run test:android`');
-      const device = (await _android.devices()).find((d) => d.serial() === SERIAL);
-      if (!device) throw new Error(`No device ${SERIAL}`);
-      device.setDefaultTimeout(20_000);
-      await use(device);
-      await device.close();
+      const connection = new Connection();
+      await use(connection);
+      await connection.close();
     },
     { scope: 'worker' },
   ],
+  device: async ({ connection }, use) => {
+    await use(await connection.live());
+  },
   app: async ({ device }, use, testInfo) => {
     const app = new App(device);
     // A picker left open by a failed test would cover the app.
