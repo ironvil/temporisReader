@@ -15,11 +15,13 @@ export interface Settings {
   trackOnLookup: boolean;
   /** Format last chosen for pasted chapters, preselected next time. */
   chapterFormat: 'txt' | 'md';
+  /** How the Japanese popup shows readings: kana (furigana) or romaji. */
+  japaneseReadings: 'kana' | 'romaji';
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, trackOnLookup: true, chapterFormat: 'txt' };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, trackOnLookup: true, chapterFormat: 'txt', japaneseReadings: 'kana' };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };

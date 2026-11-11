@@ -158,6 +158,126 @@ export async function addFrench(page: Page): Promise<void> {
   await closeSettings(page);
 }
 
+export const JMDICT_URL = 'https://www.edrdg.org/pub/Nihongo/JMdict_e.gz';
+
+/**
+ * One JMdict entry as XML, from a short form: kanji and readings marked `*` are common spellings,
+ * `!` search-only, `~` not a true reading (re_nokanji); a sense is [parts of speech, glosses, misc].
+ */
+function jmEntry(kanji: string[], readings: string[], senses: [string, string, string?][]): string {
+  const mark = (s: string) => ({ text: s.replace(/[*!~]+$/, ''), common: /\*/.test(s), hidden: /!/.test(s), noKanji: /~/.test(s) });
+  const lines = ['<entry>', '<ent_seq>1</ent_seq>'];
+  for (const k of kanji.map(mark)) {
+    lines.push('<k_ele>', `<keb>${k.text}</keb>`);
+    if (k.hidden) lines.push('<ke_inf>&sK;</ke_inf>');
+    if (k.common) lines.push('<ke_pri>ichi1</ke_pri>');
+    lines.push('</k_ele>');
+  }
+  for (const r of readings.map(mark)) {
+    lines.push('<r_ele>', `<reb>${r.text}</reb>`);
+    if (r.noKanji) lines.push('<re_nokanji/>');
+    if (r.common) lines.push('<re_pri>ichi1</re_pri>');
+    lines.push('</r_ele>');
+  }
+  for (const [pos, glosses, misc] of senses) {
+    lines.push('<sense>', ...pos.split(' ').filter(Boolean).map((p) => `<pos>&${p};</pos>`));
+    lines.push(...(misc ?? '').split(' ').filter(Boolean).map((m) => `<misc>&${m};</misc>`));
+    lines.push(...glosses.split(';').map((g) => `<gloss>${g.trim()}</gloss>`), '</sense>');
+  }
+  lines.push('</entry>');
+  return lines.join('\n');
+}
+
+/** A small JMdict (the real file's XML layout), padded past the installer's 1000-entry sanity check. */
+export function fakeJmdictXml(): string {
+  const entries = [
+    jmEntry(['私*'], ['わたし*'], [['pn', 'I; me']]),
+    jmEntry([], ['は*'], [['prt', 'indicates sentence topic']]),
+    jmEntry(['歯*'], ['は*'], [['n', 'tooth']]),
+    jmEntry(['浜*'], ['はま*'], [['n', 'beach'], ['n', 'Yokohama', 'abbr uk']]),
+    jmEntry(['林檎*'], ['りんご*'], [['n', 'apple', 'uk']]),
+    jmEntry([], ['を*'], [['prt', 'indicates direct object of action']]),
+    jmEntry(['食べる*', '喰べる!'], ['たべる*'], [['v1 vt', 'to eat'], ['', 'to live on (e.g. a salary)']]),
+    jmEntry(['見る*'], ['みる*'], [['v1 vt', 'to see; to look']]),
+    jmEntry(['行く*'], ['いく*', 'ゆく*'], [['v5k-s vi', 'to go; to move (towards)']]),
+    jmEntry(['行う*'], ['おこなう*'], [['v5u vt', 'to perform; to do']]),
+    jmEntry(['言う*'], ['いう*'], [['v5u', 'to say']]),
+    jmEntry(['来る*'], ['くる*'], [['vk vi', 'to come']]),
+    jmEntry(['為る'], ['する*'], [['vs-i', 'to do', 'uk']]),
+    jmEntry(['勉強*'], ['べんきょう*'], [['n vs vt', 'study']]),
+    jmEntry(['読む*'], ['よむ*'], [['v5m vt', 'to read']]),
+    jmEntry(['書く*'], ['かく*'], [['v5k vt', 'to write']]),
+    jmEntry(['居る*'], ['いる*'], [['v1 vi', 'to be (of animate objects); to exist', 'uk']]),
+    jmEntry(['猫*'], ['ねこ*'], [['n', 'cat']]),
+    jmEntry([], ['です*'], [['cop aux-v', 'be; is', 'pol']]),
+    jmEntry([], ['だ*'], [['cop aux-v', 'be; is']]),
+    jmEntry(['此れ'], ['これ*'], [['pn', 'this', 'uk']]),
+    jmEntry(['此れは'], ['これは'], [['exp', 'this is', 'uk'], ['int', 'well, well; oh dear']]),
+    jmEntry(['何でも'], ['なんでも*'], [['exp', 'any; anything', 'uk'], ['adv', 'by all means', 'uk']]),
+    jmEntry(['何で*'], ['なんで*'], [['adv', 'why?; what for?']]),
+    jmEntry(['何*'], ['なに*'], [['pn', 'what']]),
+    jmEntry([], ['も*'], [['prt', 'too; also']]),
+    jmEntry([], ['の*'], [['prt', 'indicates possessive']]),
+    jmEntry(['可愛い*'], ['かわいい*'], [['adj-i', 'cute; adorable', 'uk']]),
+    jmEntry([], ['ね*'], [['prt', 'right?; isn\'t it?']]),
+    jmEntry([], ['とても*'], [['adv', 'very']]),
+    jmEntry(['高い*'], ['たかい*'], [['adj-i', 'high; tall']]),
+    jmEntry(['無い*'], ['ない*'], [['adj-i', 'nonexistent; not being (there)', 'uk']]),
+    jmEntry(['先生*'], ['せんせい*'], [['n', 'teacher']]),
+    jmEntry([], ['に*'], [['prt', 'at (place, time); in; on; to']]),
+    jmEntry(['褒める*'], ['ほめる*'], [['v1 vt', 'to praise']]),
+    jmEntry(['嬉しい*'], ['うれしい*'], [['adj-i', 'happy; glad']]),
+    jmEntry(['凝る*'], ['こる*'], [['v5r vi', 'to be absorbed in']]),
+    jmEntry(['雨*'], ['あめ*'], [['n', 'rain']]),
+    jmEntry([], ['が*'], [['prt', 'indicates sentence subject']]),
+    jmEntry(['降る*'], ['ふる*'], [['v5r vi', 'to fall (of rain, snow)']]),
+    jmEntry(['雨が降る*'], ['あめがふる*'], [['exp v5r', 'to rain']]),
+    jmEntry(['吾輩は猫である'], ['わがはいはねこである'], [['n', 'I Am a Cat (novel by Natsume Sōseki)', 'work']]),
+    jmEntry(['吾輩'], ['わがはい'], [['pn', 'I; me (arrogant)']]),
+    jmEntry(['見に行く'], ['みにいく'], [['exp v5k-s', 'to go to see']]),
+    jmEntry(['映画*'], ['えいが*'], [['n', 'movie; film']]),
+    jmEntry(['置く*'], ['おく*'], [['v5k vt', 'to put; to place']]),
+    jmEntry([], ['コーヒー*'], [['n', 'coffee']]),
+    jmEntry([], ['カップ*'], [['n', 'cup']]),
+    jmEntry(['本*'], ['ほん*'], [['n', 'book']]),
+    jmEntry(['彼女*'], ['かのじょ*'], [['pn', 'she; her']]),
+    jmEntry([], ['で*'], [['prt', 'at; in']]),
+    jmEntry([], ['て*'], [['prt', 'and (te-form)']]),
+    jmEntry(['昨日*'], ['きのう*'], [['n adv', 'yesterday']]),
+    jmEntry(['了'], ['りょう'], [['n', Array.from({ length: 30 }, (_, i) => `long gloss number ${i + 1} to make the popup overflow`).join('; ')]]),
+  ];
+  for (let i = 0; i < 1100; i++) entries.push(jmEntry([`試${i}`], ['し'], [['n', `filler ${i}`]]));
+  return ['<?xml version="1.0" encoding="UTF-8"?>', '<!DOCTYPE JMdict [', '<!ENTITY v1 "Ichidan verb">', ']>', '<!-- JMdict created: 2026-11-01 -->', '<JMdict>', ...entries, '</JMdict>', ''].join('\n');
+}
+
+export function fakeJmdict(): Buffer {
+  return gzipSync(Buffer.from(fakeJmdictXml()));
+}
+
+export function japaneseBook(): string {
+  const sentences = [
+    '私はりんごを食べました。',
+    '彼女は本を読んでいる。',
+    'これは私の猫です。とても可愛いですね。',
+    '先生に褒められて、嬉しかった。',
+    '昨日、映画を見に行った。',
+  ];
+  const chapter = (title: string, n: number) => [`# ${title}`, ...Array.from({ length: n }, (_, i) => sentences[i % sentences.length])].join('\n\n');
+  return [chapter('第一章', 30), chapter('第二章', 5)].join('\n\n');
+}
+
+/** Settings → Languages → Japanese → Add, serving a fake JMdict. */
+export async function addJapanese(page: Page): Promise<void> {
+  await page.route(JMDICT_URL, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/octet-stream', body: fakeJmdict(), headers: { 'access-control-allow-origin': '*' } }),
+  );
+  await openLanguageSettings(page, 'ja');
+  const card = page.locator('[data-language="ja"]');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(card.locator('.lang-status')).toHaveText('Added');
+  await closeSettings(page);
+}
+
 export function chineseBook(): string {
   const sentences = [
     '今天早上，阳光从高高的窗户里斜斜地照进来，落在桌子上，落在银梳子上，落在她的头发上。',

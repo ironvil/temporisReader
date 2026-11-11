@@ -634,7 +634,74 @@ progress {
   color: var(--muted);
 }
 
+/* Japanese entries */
+.ja-entry + .ja-entry {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ja-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.ja-word {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.ja-reading {
+  font-size: 1.15rem;
+}
+.ja-common {
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.ja-forms {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.ja-reasons {
+  margin-left: 10px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.ja-pos {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ja-note {
+  color: var(--muted);
+}
+.ja-phrase {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ja-phrase + .ja-entry {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+.ja-phrase-label {
+  margin-right: 8px;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 /* Languages in settings */
+.lang-options {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 .lang-head {
   display: flex;
   align-items: center;

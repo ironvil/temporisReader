@@ -107,6 +107,8 @@ export interface LanguageModule<Entry = unknown> {
    * Returns null when the tapped character isn't part of a word (punctuation, spaces…).
    */
   lookup(paragraph: string, index: number): Promise<LookupResult<Entry> | null>;
+  /** Optional: the language's own options, shown on its settings page. */
+  settingsRows?(): HTMLElement;
   /** Renders dictionary entries for the popup. Each language decides its own layout. */
   renderEntries(result: LookupResult<Entry>): HTMLElement;
 }

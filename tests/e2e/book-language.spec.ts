@@ -76,7 +76,7 @@ test('the language can be changed in the editor and is kept when chapters are ad
   await page.getByRole('button', { name: 'Edit owl' }).click();
   const language = page.getByRole('dialog', { name: 'Edit book' }).getByLabel('Language');
   await expect(language).toHaveValue('zh');
-  await expect(language.locator('option')).toHaveText(['Chinese · 中文', 'French · Français', 'German · Deutsch', 'Other (not supported)']);
+  await expect(language.locator('option')).toHaveText(['Chinese · 中文', 'French · Français', 'German · Deutsch', 'Japanese · 日本語', 'Other (not supported)']);
   await language.selectOption('');
 
   // Adding Chinese text would re-detect Chinese, but the choice sticks.

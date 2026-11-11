@@ -20,5 +20,6 @@
         <exclude domain="file" path="dictionaries/cc-cedict.download.gz" />
         <exclude domain="file" path="dictionaries/wiktionary-fr.download.gz" />
         <exclude domain="file" path="dictionaries/wiktionary-de.download.gz" />
+        <exclude domain="file" path="dictionaries/jmdict.download.gz" />
     </device-transfer>
 </data-extraction-rules>

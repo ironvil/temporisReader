@@ -406,6 +406,7 @@ export class SettingsView {
       ),
       bar,
       dictionaryRows,
+      lang.settingsRows?.() ?? null,
       await this.knownWordsRow(lang),
     );
   }
