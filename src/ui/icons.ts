@@ -1,4 +1,7 @@
-/** Inline SVG icons (Lucide-style, 24px grid, stroke = currentColor). */
+/**
+ * Inline SVG icons (24px grid, stroke = currentColor). Several paths are from Lucide
+ * (https://lucide.dev, ISC licence; Feather parts MIT), see README → Licence.
+ */
 const paths = {
   back: '<path d="M15 18l-6-6 6-6"/>',
   forward: '<path d="M9 18l6-6-6-6"/>',

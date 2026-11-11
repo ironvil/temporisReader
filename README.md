@@ -161,4 +161,9 @@ including the exception.
 The exception only covers code we own, so third-party code shipped in the app must be permissively licensed
 (MIT, BSD, ISC, Apache-2.0, MPL-2.0, …) or carry an equivalent exception: plain GPL code would keep the app
 out of the App Store, and GPLv2-only code can't be combined with it at all. Dictionaries are downloaded at
-runtime, not bundled, and keep their own licences (CC-CEDICT and Wiktionary: CC BY-SA).
+runtime, not bundled, and keep their own licences (CC-CEDICT and Wiktionary: CC BY-SA; JMdict: the EDRDG
+licence, CC BY-SA).
+
+Some of the icons in `src/ui/icons.ts` are from [Lucide](https://lucide.dev) (ISC licence, Copyright (c) for
+portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT); all other copyright (c) for Lucide
+are held by Lucide Contributors 2022).
