@@ -49,3 +49,6 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$PATH
 - Files that can be rebuilt go in `derived/<id>/`, not `books/`: everything in `books/` is backed up.
 - New native behaviour needs a web stand-in so the web e2e tests can cover the app's side of it
   (see the "device storage" stand-ins in linked-files.ts and auto-backup.ts).
+- Licence: GPL-3.0-only with an app-store exception (README → Licence). Only add runtime dependencies
+  that are permissive (MIT, BSD, ISC, Apache-2.0, MPL-2.0) or carry an equivalent exception: plain
+  GPL code would keep the app off the App Store. Dev-only tools don't matter.

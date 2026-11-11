@@ -145,3 +145,15 @@ The logo (an hourglass behind an open book) lives in `assets/logo/`: `foreground
 foreground on a 108-unit canvas, artwork inside the 66-unit safe circle), `monochrome.svg` (Android 13+
 themed icons) and `background-color.txt`. `npm run icons` renders every launcher size, the splash
 images and `public/favicon.svg` from them.
+
+## Licence
+
+GPL-3.0-only ([LICENSE](LICENSE)) with an app-store exception ([APP-STORE-EXCEPTION.md](APP-STORE-EXCEPTION.md)):
+the app may be distributed through stores such as Apple's App Store, whose terms the plain GPL doesn't allow,
+as long as the source stays available under the same terms. Contributions are accepted under the same licence,
+including the exception.
+
+The exception only covers code we own, so third-party code shipped in the app must be permissively licensed
+(MIT, BSD, ISC, Apache-2.0, MPL-2.0, …) or carry an equivalent exception: plain GPL code would keep the app
+out of the App Store, and GPLv2-only code can't be combined with it at all. Dictionaries are downloaded at
+runtime, not bundled, and keep their own licences (CC-CEDICT and Wiktionary: CC BY-SA).
