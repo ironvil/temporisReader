@@ -12,7 +12,7 @@ import {
   type BookMeta,
   type SourceMeta,
 } from '../books/library';
-import { formatFromFileName, type BookFormat } from '../books/parse';
+import { formatFromFileName, type BookFormat } from '@temporis/book-parser';
 import { getLanguage, languages } from '../languages';
 import { getSettings, updateSettings } from '../settings';
 import { field, openDialog } from './dialog';
@@ -167,7 +167,7 @@ export class BookEditorView {
       fileInput.value = '';
       if (!picked) return;
       if (!formatFromFileName(picked.name)) {
-        toast('Only .txt and .md files are supported');
+        toast(/\.epub$/i.test(picked.name) ? 'Chapters can only be added from .txt or .md files. Import EPUBs from the library.' : 'Only .txt and .md files are supported');
         return;
       }
       file = { name: picked.name, ...(await readFileText(picked)) };

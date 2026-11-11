@@ -2,6 +2,9 @@
  * Whole-library backup: one JSON file with the library list (titles, chapters' sources, reading
  * progress), every book's source texts, known-word lists and settings. Derived files (content
  * indexes, word counts) are rebuilt on demand; dictionaries are re-downloaded.
+ *
+ * Linked files (EPUBs) aren't in the backup, only their reference and checksum: after restoring on
+ * another phone, the reader asks for each one to be found again.
  */
 import { listBooks, type BookMeta } from './books/library';
 import { languages } from './languages';
@@ -30,6 +33,7 @@ export async function createBackup(): Promise<Backup> {
   const files: Record<string, string> = {};
   for (const book of library) {
     for (const source of book.sources) {
+      if (source.file) continue;
       const path = `books/${book.id}/${source.path}`;
       const text = await readText(path);
       if (text === null) throw new Error(`The text of “${source.title}” in “${book.title}” is missing`);
@@ -74,6 +78,7 @@ export function parseBackup(text: string): Backup {
     if (!isObject(book) || typeof book.id !== 'string' || !Array.isArray(book.sources)) throw new Error('The backup’s library is damaged');
     for (const source of book.sources as unknown[]) {
       if (!isObject(source) || typeof source.path !== 'string') throw new Error('The backup’s library is damaged');
+      if (isObject(source.file)) continue; // Linked file: only its reference is backed up.
       if (typeof files[`books/${book.id}/${source.path}`] !== 'string') throw new Error(`The backup is missing text for “${String(book.title)}”`);
     }
   }

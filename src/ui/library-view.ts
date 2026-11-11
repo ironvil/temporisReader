@@ -1,4 +1,5 @@
-import { createBook, deleteBook, importBook, listBooks, type BookMeta } from '../books/library';
+import { createBook, deleteBook, importPickedFile, importWebFile, listBooks, type BookMeta, type ImportResult } from '../books/library';
+import { nativePicker, pickFile, type PickedFile } from '../books/linked-files';
 import { getLanguage } from '../languages';
 import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
 import { knownWords } from '../vocab/known-words';
@@ -27,7 +28,7 @@ export class LibraryView {
     this.menu = el(
       'div',
       { class: 'menu', role: 'menu', hidden: true },
-      this.menuItem('Import a file', () => this.fileInput.click()),
+      this.menuItem('Import a file', () => this.chooseFile()),
       this.menuItem('Create a book', () => this.createBook()),
     );
     this.addButton = iconButton('plus', 'Add book', () => this.toggleMenu());
@@ -60,14 +61,14 @@ export class LibraryView {
     if (!books.length) {
       const importButton = el('button', { type: 'button', class: 'button' }, 'Import a file');
       const createButton = el('button', { type: 'button', class: 'button secondary' }, 'Create a book');
-      importButton.addEventListener('click', () => this.fileInput.click());
+      importButton.addEventListener('click', () => this.chooseFile());
       createButton.addEventListener('click', () => this.createBook());
       this.list.append(
         el(
           'li',
           { class: 'empty' },
           icon('book'),
-          el('p', {}, 'No books yet. Import a .txt or .md file, or create a book and add chapters to it.'),
+          el('p', {}, 'No books yet. Import an .epub, .txt or .md file, or create a book and add chapters to it.'),
           el('div', { class: 'actions' }, importButton, createButton),
         ),
       );
@@ -110,10 +111,13 @@ export class LibraryView {
     const details = !book.chapterCount
       ? 'No chapters yet'
       : [
+          book.author,
           book.progress ? `${percent}%` : 'Not started',
           `${book.chapterCount} ${book.chapterCount === 1 ? 'chapter' : 'chapters'}`,
           language ? language.name : 'Unsupported language',
-        ].join(' · ');
+        ]
+          .filter(Boolean)
+          .join(' · ');
 
     const open = el(
       'button',
@@ -127,7 +131,8 @@ export class LibraryView {
 
     const edit = iconButton('edit', `Edit ${book.title}`, () => this.callbacks.onEdit(book.id));
     const remove = iconButton('trash', `Delete ${book.title}`, async () => {
-      if (!confirm(`Delete “${book.title}” and its reading progress?`)) return;
+      const linked = book.sources.some((s) => s.file);
+      if (!confirm(`Delete “${book.title}” and its reading progress?${linked ? ' The EPUB file itself is not deleted.' : ''}`)) return;
       await deleteBook(book.id);
       await this.refresh();
     });
@@ -165,13 +170,38 @@ export class LibraryView {
     }
   }
 
+  /** Android: the system picker, so EPUBs can be linked where they are. Web: a file input. */
+  private chooseFile(): void {
+    if (!nativePicker()) {
+      this.fileInput.click();
+      return;
+    }
+    void this.runImport(async () => {
+      const picked = await pickFile();
+      return picked && importPickedFile(picked);
+    });
+  }
+
+  /** Imports a file opened with the app from elsewhere (Android "Open with" / "Share"). */
+  importOpenedFile(file: PickedFile): Promise<void> {
+    return this.runImport(() => importPickedFile(file));
+  }
+
   private async onFilePicked(): Promise<void> {
     const file = this.fileInput.files?.[0];
     this.fileInput.value = '';
     if (!file) return;
+    await this.runImport(() => importWebFile(file));
+  }
+
+  private async runImport(task: () => Promise<ImportResult | null>): Promise<void> {
     try {
-      const book = await importBook(file);
-      toast(`Imported “${book.title}”`);
+      const result = await task();
+      if (!result) return;
+      const { book, duplicate, persisted } = result;
+      if (duplicate) toast(`“${book.title}” is already in your library`);
+      else if (!persisted) toast(`Imported “${book.title}”. Android won’t keep access to that location, so you may need to find the file again later.`);
+      else toast(`Imported “${book.title}”`);
       await this.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Import failed');

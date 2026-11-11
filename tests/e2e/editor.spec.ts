@@ -171,6 +171,8 @@ test('add chapter validates input and rejects unsupported files', async ({ page 
   await expect(dialog.getByRole('alert')).toHaveText('Choose a file or paste some text');
 
   await dialog.getByTestId('chapter-file-input').setInputFiles({ name: 'x.epub', mimeType: 'application/epub+zip', buffer: Buffer.from('x') });
+  await expect(page.getByText('Chapters can only be added from .txt or .md files. Import EPUBs from the library.')).toBeVisible();
+  await dialog.getByTestId('chapter-file-input').setInputFiles({ name: 'x.pdf', mimeType: 'application/pdf', buffer: Buffer.from('x') });
   await expect(page.getByText('Only .txt and .md files are supported')).toBeVisible();
   await expect(dialog.getByLabel('Chapter text')).toBeVisible();
 
@@ -230,6 +232,47 @@ test('books stored by older versions are migrated', async ({ page }) => {
   await page.getByRole('button', { name: 'Library' }).click();
   await page.getByRole('button', { name: 'Edit book' }).click();
   await expect(page.locator('.chapter-details')).toHaveText('2 chapters · book.txt');
+});
+
+test('a book indexed by an older parser keeps its place when its chapters move', async ({ page }) => {
+  await importBook(page, 'book.txt', chineseBook());
+  await openFirstBook(page);
+  while ((await page.locator('.chapter-count').textContent()) !== 'Chapter 2 of 2') await nextPage(page);
+  await nextPage(page);
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
+  const place = await page.locator('.page-count').textContent();
+  await page.getByRole('button', { name: 'Library' }).click();
+  await expect(page.locator('.book-name')).toBeVisible();
+
+  // Act out an older parser that found no headings: the whole book was one chapter, and the
+  // saved position is "chapter 1, paragraph n".
+  await page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((res, rej) => {
+      const o = indexedDB.open('Disc');
+      o.onsuccess = () => res(o.result);
+      o.onerror = () => rej(o.error);
+    });
+    const store = () => db.transaction('FileStorage', 'readwrite').objectStore('FileStorage');
+    const get = (key: string) => new Promise<any>((res) => (store().get(key).onsuccess = (e) => res((e.target as IDBRequest).result)));
+    const put = (value: unknown) => new Promise((res) => (store().put(value).onsuccess = res));
+
+    const libraryEntry = await get('/DATA/library.json');
+    const [book] = JSON.parse(libraryEntry.content);
+    const indexEntry = await get(`/DATA/books/${book.id}/index.json`);
+    const index = JSON.parse(indexEntry.content);
+    const [first, second] = index.chapters;
+    const old = { ...index, version: index.version - 1, chapters: [{ ...first, end: second.end }] };
+    await put({ ...indexEntry, content: JSON.stringify(old) });
+    book.progress = { ...book.progress, chapter: 0, paragraph: second.start + book.progress.paragraph, sourceChapter: first.sourceChapter };
+    book.chapterCount = 1;
+    await put({ ...libraryEntry, content: JSON.stringify([book]) });
+  });
+
+  await page.reload();
+  await expect(page.locator('body[data-ready]')).toBeAttached();
+  await openFirstBook(page);
+  await expect(page.locator('.chapter-count')).toHaveText('Chapter 2 of 2');
+  await expect(page.locator('.page-count')).toHaveText(place!);
 });
 
 test('add a whole-book file split into chapters at its headings', async ({ page }) => {

@@ -11,7 +11,7 @@ import type { LanguageModule, LookupResult } from '../languages/types';
 import { IntlWordSegmenter } from '../segmentation/intl';
 import { charIndexOfWord, wordIndexAt, type WordSegmenter } from '../segmentation/types';
 import { getSettings, onSettingsChange } from '../settings';
-import { el } from '../ui/dom';
+import { el, toast } from '../ui/dom';
 import { icon, iconButton } from '../ui/icons';
 import { KNOWN, knownWords, wordsToMarkKnown } from '../vocab/known-words';
 import { openChapterList } from './chapter-list';
@@ -19,7 +19,7 @@ import { blockOffset, charRange, clearHighlight, highlightsSupported, renderInli
 import { remindAboutLanguage } from './language-reminder';
 import { MIN_PAGE_DWELL_MS, offerMarkKnown } from './mark-known';
 import { LookupPopup } from './popup';
-import { globalOffset, guessCharsPerPage, type Located } from './scrub';
+import { globalOffset, guessCharsPerPage, locateOffset, type Located } from './scrub';
 import { BookScrubber } from './scrubber';
 import { statusButtons, updateLevelOnLookup } from './word-status';
 
@@ -85,9 +85,13 @@ export class Reader {
   private layoutSize = '';
   private relayoutTimer: number | undefined;
   private readonly scrubber: BookScrubber;
+  /** The page indicator, which opens the scrubber. */
+  private readonly indicator: HTMLButtonElement;
   /** Cached per layout (chapter + page size + text size). */
   private cachedCharsPerPage: number | null = null;
   private unsubscribeKnown: (() => void) | null = null;
+  /** A move to a chapter that is still loading (big books load in the background), done when it arrives. */
+  private waitingFor: (() => void) | null = null;
 
   constructor(private readonly callbacks: ReaderCallbacks) {
     this.bookTitle = el('div', { class: 'book-title' });
@@ -101,15 +105,23 @@ export class Reader {
     const indicator = el(
       'button',
       { type: 'button', class: 'page-indicator', 'aria-expanded': 'false', 'aria-label': 'Book position' },
-      // A pill with a chevron, so it reads as a control that opens the book scrubber.
-      el('span', { class: 'indicator-pill' }, el('span', { class: 'indicator-text' }, this.pageCountEl, this.chapterCountEl), icon('up')),
-    );
+      // A pill with a chevron, so it reads as a control that opens the book scrubber. While the
+      // rest of a big book loads, a spinner takes the chevron's place and the button is disabled.
+      el(
+        'span',
+        { class: 'indicator-pill' },
+        el('span', { class: 'indicator-text' }, this.pageCountEl, this.chapterCountEl),
+        icon('up'),
+        el('span', { class: 'spinner', 'aria-hidden': 'true' }),
+      ),
+    ) as HTMLButtonElement;
+    this.indicator = indicator;
     indicator.addEventListener('click', () => this.scrubber.toggle());
     this.scrubber = new BookScrubber(
       {
         state: () => ({ book: this.book, chapterIndex: this.chapterIndex, page: this.page, pageCount: this.pageCount, position: this.position }),
         charsPerPage: () => this.charsPerPage(),
-        jumpTo: (target) => this.jumpTo(target),
+        jumpTo: (target, offset) => this.jumpTo(target, offset),
       },
       indicator,
     );
@@ -170,6 +182,57 @@ export class Reader {
     else this.setPage(0);
     this.startPageVisit();
     void this.checkLanguage(book);
+    this.setLoading(!book.complete);
+    if (!book.complete) {
+      book.whenComplete.then(
+        (same) => {
+          if (this.book !== book) return;
+          this.setLoading(false);
+          this.root.dataset.complete = 'true';
+          // The book turned out different from what was shown: start again from its saved place.
+          if (!same) this.showSavedPlace(book);
+        },
+        () => {
+          if (this.book !== book) return;
+          this.setLoading(false);
+          toast('The rest of the book couldn’t be loaded');
+        },
+      );
+    } else this.root.dataset.complete = 'true';
+  }
+
+  /** While the rest of a big book loads, the scrubber can't be opened (its button shows a spinner). */
+  private setLoading(loading: boolean): void {
+    this.indicator.disabled = loading;
+    this.indicator.classList.toggle('loading', loading);
+    this.indicator.setAttribute('aria-busy', String(loading));
+    this.indicator.setAttribute('aria-label', loading ? 'Book position (loading the rest of the book)' : 'Book position');
+    if (loading) this.scrubber.toggle(false);
+  }
+
+  private showSavedPlace(book: OpenBook): void {
+    const saved = book.meta.progress;
+    const chapter = saved && saved.chapter < book.index.chapters.length ? saved.chapter : 0;
+    this.renderChapter(chapter);
+    if (saved && saved.chapter === chapter) this.goTo(this.positionFromProgress(saved));
+    else this.setPage(0);
+  }
+
+  /**
+   * True if chapter `index` can be shown now. Otherwise (a big book still loading) `retry` runs once
+   * the whole book is loaded, unless another move replaced it.
+   */
+  private chapterReady(index: number, retry: () => void): boolean {
+    const book = this.book!;
+    if (book.hasChapter(index)) return true;
+    this.waitingFor = retry;
+    toast('Loading the rest of the book…');
+    void book.whenComplete.then(() => {
+      if (this.book !== book || this.waitingFor !== retry) return;
+      this.waitingFor = null;
+      retry();
+    });
+    return false;
   }
 
   /** Reminds about a missing or unsupported language; data-language-check lets tests wait for it. */
@@ -188,6 +251,9 @@ export class Reader {
 
   async close(): Promise<void> {
     delete this.root.dataset.languageCheck;
+    delete this.root.dataset.complete;
+    this.waitingFor = null;
+    this.setLoading(false);
     this.unsubscribeKnown?.();
     this.unsubscribeKnown = null;
     this.clearWordHighlights();
@@ -228,6 +294,7 @@ export class Reader {
     this.scrubber.cancel();
     const atEnd = this.page === this.pageCount - 1 && this.chapterIndex === this.book.index.chapters.length - 1;
     if (atEnd) return this.applyTransform(true);
+    if (this.page === this.pageCount - 1 && !this.chapterReady(this.chapterIndex + 1, () => this.next())) return;
     // Collect before the page changes (the next chapter replaces the DOM).
     const unlooked = this.unlookedWordsOnLeavingPage();
     if (this.page < this.pageCount - 1) this.setPage(this.page + 1, true);
@@ -242,6 +309,7 @@ export class Reader {
   prev(): void {
     if (!this.book) return;
     this.scrubber.cancel();
+    if (this.page === 0 && this.chapterIndex > 0 && !this.chapterReady(this.chapterIndex - 1, () => this.prev())) return;
     if (this.page > 0) this.setPage(this.page - 1, true);
     else if (this.chapterIndex > 0) {
       this.renderChapter(this.chapterIndex - 1);
@@ -253,7 +321,11 @@ export class Reader {
   // ── Jumps (scrubber, chapter list) ───────────────────────────────────────
 
   /** A jump is not a page turn: no mark-known prompt, and a fresh page visit. */
-  private jumpTo(target: Located): void {
+  private jumpTo(target: Located, offset?: number): void {
+    // A chapter still loading had no paragraph offsets: find the place again once it's there.
+    const book = this.book!;
+    const retry = () => this.jumpTo(offset === undefined ? target : locateOffset(book.index, book.content.length, offset));
+    if (!this.chapterReady(target.chapter, retry)) return;
     if (target.chapter !== this.chapterIndex) this.renderChapter(target.chapter);
     this.goTo({ paragraph: target.paragraph, char: target.char });
     this.startPageVisit();
@@ -262,6 +334,7 @@ export class Reader {
   private jumpToChapter(index: number): void {
     if (!this.book) return;
     this.scrubber.cancel();
+    if (!this.chapterReady(index, () => this.jumpToChapter(index))) return;
     this.renderChapter(index);
     this.setPage(0);
     this.startPageVisit();

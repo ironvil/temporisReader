@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { assembleBook, type SourceMeta } from '../../src/books/library';
-import { buildChapters, decodeText, formatFromFileName, joinLines, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '../../src/books/parse';
+import { type SourceMeta } from '../../src/books/library';
+import { assembleBook, buildChapters, decodeText, formatFromFileName, joinLines, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '@temporis/book-parser';
 
 test.describe('txt parsing', () => {
   test('one paragraph per line with Chinese chapter headings', () => {
@@ -178,7 +178,7 @@ test('assembleBook: split sources keep detected chapters, others are one chapter
 test('assembleBook offsets inline marks by the source position', () => {
   const { index } = assembleBook([
     { source: source('a', 'A', false), parsed: parseBook('一\n\n二', 'md', 'A') },
-    { source: { ...source('b', 'B', false), format: 'md' }, parsed: parseBook('*斜体*', 'md', 'B') },
+    { source: { ...source('b', 'B', false), format: 'md' } as SourceMeta, parsed: parseBook('*斜体*', 'md', 'B') },
   ]);
   expect(index.marks).toEqual({ 2: [[0, 2, 'i']] });
 });

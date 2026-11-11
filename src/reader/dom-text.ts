@@ -2,7 +2,7 @@
  * Mapping between paragraph-level text offsets and the DOM. A paragraph's plain text is its
  * textContent; markdown styling only adds <strong>/<em> around parts of it.
  */
-import type { InlineMark } from '../books/parse';
+import type { InlineMark } from '@temporis/book-parser';
 import { el } from '../ui/dom';
 
 /** Paragraph plain text + bold/italic ranges → DOM nodes. */

@@ -22,6 +22,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- "Open with" for EPUBs (file managers, downloads, browsers): imported via LinkedFilesPlugin. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+
+            <!-- "Share" an EPUB to the app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+
         </activity>
 
         <provider

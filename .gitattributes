@@ -1,0 +1,4 @@
+# Keep the Gradle wrappers runnable whichever OS checks them out.
+gradlew text eol=lf
+*.bat text eol=crlf
+*.epub binary

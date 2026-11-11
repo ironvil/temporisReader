@@ -3,6 +3,9 @@
 A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word to look it up.
 
 - Imports `.txt` and `.md` files (UTF-8, UTF-16 or GB18030) as books, with chapters detected from headings.
+- Imports `.epub` (EPUB 2 and 3) as linked books: only metadata is stored (title, author, language, chapter counts, progress, and the file's location, size and SHA-256). The file is read from where it is each time the book opens, never copied. A different checksum means the file was edited: the book is re-indexed, keeping the reading position by chapter, with a notice. If the file was moved or deleted, or access was lost (e.g. a backup restored on another phone), the book offers to find it again (a file with different contents is only accepted after asking) or to remove it. Importing a file that's already in the library (same checksum) doesn't add it twice. DRM-protected EPUBs are refused. Chapters follow the table of contents, and a chapter's opening line that matches its TOC title is shown as a heading. Without a usable TOC they come from h1–h6 headings, and failing those (Gutenberg EPUBs made from a .txt file) from short paragraphs set off by a large top margin or that read like "Chapter 12". Left out of the text: Project Gutenberg's English header and licence (cut at its START/END lines), contents lists made of links, and blank spacer paragraphs. The language comes from the EPUB's metadata when it names a supported language, and is detected from the text otherwise (Calibre conversions often say "en" whatever the book is in). On Android the file is picked with the system picker and the app keeps a persistable read grant (`LinkedFilesPlugin.java`); in the web build a stand-in "device storage" folder plays that part.
+- Big EPUBs open at the saved chapter straight away. After a full parse, `books/<id>/layout.json` keeps the book's shape without its text: chapters, headings, character offsets, and which paragraphs of which spine documents were kept. All EPUB parsing runs in a Web Worker (`src/books/parse-worker.ts`); the file's bytes are transferred to it, not copied. Opening an unchanged file has the worker read just the saved chapter (the first, for a book never opened) and its neighbours from their own documents (`readEpubParagraphs`) and send them back at once, then parse the whole book. The partly loaded book has the whole book's offsets, so progress stays exact. Until the rest arrives, the page indicator (which opens the scrubber) is disabled and shows a spinner, and moving to a chapter that isn't loaded yet waits for it. A book imported before layouts existed gets one on its first open. A changed file, a new parser version or a layout that doesn't fit falls back to the full parse.
+- Android lists the app under "Open with" and "Share" for EPUBs (intent filters for `application/epub+zip`). A file opened that way goes to the library and is imported there, like one picked with "Import a file"; if the sending app doesn't offer lasting access, the import says the file may need finding again later.
 - Books can also be created empty and built chapter by chapter in the editor: add a chapter from a file or pasted text/markdown, rename, reorder and delete chapters. Reading progress follows its chapter when chapters move.
 - A book is an ordered list of sources; on every change the sources are re-parsed into one index (paragraph offsets, headings, bold/italic marks, chapters).
 - Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator.
@@ -20,9 +23,15 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 ## Layout
 
 ```
+packages/book-parser/       @temporis/book-parser: the parser, no app dependencies (see "Parser version")
+  src/parse.ts              txt/md → paragraphs, headings, chapters
+  src/epub.ts               EPUB → the same model; TOC chapters (with src/zip.ts and src/xml.ts)
+  src/assemble.ts           a book's sources → one index (content offsets, chapters by source)
+  src/version.ts            PARSER_VERSION
 src/
-  books/parse.ts            txt/md → paragraphs, headings, chapters (pure)
-  books/library.ts          sources → book index, import/create/edit, progress
+  books/linked-files.ts     files read in place (EPUBs): pick, read, checksum, release
+  books/parse-worker.ts     EPUB parsing off the main thread (books/parse-off-thread.ts is its client)
+  books/library.ts          book storage, import/create/edit, progress
   reader/reader.ts          pagination, gestures, tap-to-lookup, progress tracking
   reader/scrubber.ts        book-wide position slider
   reader/chapter-list.ts    chapter list dialog with known-word percentages
@@ -74,6 +83,17 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 E2E tests intercept the CC-CEDICT download and serve a small fixture, so they never hit MDBG.
+
+## Parser version
+
+The parser lives in its own workspace package, `packages/book-parser`, so changes to it stand out in
+a diff. Any change there that can give a book different paragraphs, headings or chapters must bump
+`PARSER_VERSION` in `packages/book-parser/src/version.ts`. Books indexed by an older version are
+re-indexed when they next open, with the reading position kept at the same place in the text.
+
+`npm run check:parser-version` fails if the package changed since this branch left `main` (or the
+ref passed after `--`) without a bump. Run it before opening a PR. A change that can't affect
+output (comments, refactoring) can ignore it.
 
 ## Release builds
 

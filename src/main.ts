@@ -1,12 +1,14 @@
 import './style.css';
 import { App } from '@capacitor/app';
-import { openBook } from './books/library';
+import { BookFileError, openBook } from './books/library';
+import { watchOpenedFiles } from './books/linked-files';
 import { Reader } from './reader/reader';
 import { loadSettings } from './settings';
 import { BookEditorView } from './ui/book-editor';
 import { closeTopDialog } from './ui/dialog';
 import { toast } from './ui/dom';
 import { LibraryView } from './ui/library-view';
+import { showLinkedFileDialog } from './ui/linked-file-dialog';
 import { SettingsView } from './ui/settings-view';
 
 async function main() {
@@ -25,7 +27,12 @@ async function main() {
       const book = await openBook(id);
       show('reader');
       reader.open(book);
+      if (book.changed.length) toast(`“${book.changed.join('”, “')}” changed since you last read it, so the book was reloaded`);
     } catch (err) {
+      if (err instanceof BookFileError) {
+        showLinkedFileDialog(err, { onRelinked: () => void openReader(id), onRemoved: () => void library.refresh() });
+        return;
+      }
       toast(err instanceof Error ? err.message : 'Could not open book');
     }
   };
@@ -82,6 +89,15 @@ async function main() {
   show('library');
   await library.refresh();
   document.body.dataset.ready = 'true';
+
+  // An EPUB opened with the app from elsewhere: back to the library, and import it there.
+  void watchOpenedFiles(async (file) => {
+    while (closeTopDialog());
+    if (settings.isOpen) closeSettings();
+    if (editor.isOpen) closeEditor();
+    if (current === 'reader') await showLibrary();
+    await library.importOpenedFile(file);
+  });
 }
 
 void main();

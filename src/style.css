@@ -427,6 +427,44 @@ progress {
 .page-indicator[aria-expanded='true'] .indicator-pill svg {
   transform: rotate(180deg);
 }
+.indicator-pill .spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  margin: 2px;
+  border: 2px solid var(--line);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+/* Loading the rest of a big book: disabled, a spinner for the chevron, the pill dimmed and dashed. */
+.page-indicator.loading {
+  cursor: default;
+}
+.page-indicator.loading .indicator-pill {
+  border-style: dashed;
+  background: none;
+}
+.page-indicator.loading .indicator-pill svg {
+  display: none;
+}
+.page-indicator.loading .spinner {
+  display: block;
+}
+.page-indicator.loading .chapter-count,
+.page-indicator.loading .page-count {
+  opacity: 0.7;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .indicator-pill .spinner {
+    animation-duration: 2.4s;
+  }
+}
 .page-indicator:active .indicator-pill {
   background: var(--line);
 }

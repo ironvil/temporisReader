@@ -5,7 +5,7 @@
  * in books/<id>/words.json, keyed by the book's content version and the language's segmentation
  * key (dictionary version). Percentages are then cheap to recompute whenever known words change.
  */
-import { loadBook, type OpenBook } from '../books/library';
+import { getBook, loadBook, type OpenBook } from '../books/library';
 import type { LanguageModule } from '../languages/types';
 import { readJson, writeJson } from '../storage';
 import { keyedWords } from '../languages/word-keys';
@@ -68,17 +68,23 @@ export function bookWordCounts(bookId: string, lang: LanguageModule, book?: Open
   const run = async (): Promise<WordCounts[] | null> => {
     const segKey = lang.segmentationKey();
     if (!segKey) return null;
-    const source = book ?? (await loadBook(bookId));
-    const key = `${source.meta.contentVersion ?? 0}|${segKey}`;
-
+    const keyOf = (version: number | undefined) => `${version ?? 0}|${segKey}`;
+    // Check the caches before loading the book: books with linked files read the whole file to load.
+    const meta = book?.meta ?? (await getBook(bookId));
     const cached = memory.get(bookId);
-    if (cached?.key === key) return cached.chapters;
+    if (cached?.key === keyOf(meta.contentVersion)) return cached.chapters;
     const path = `books/${bookId}/words.json`;
     const stored = await readJson<StoredCounts>(path);
-    if (stored?.key === key) {
+    if (stored?.key === keyOf(meta.contentVersion)) {
       memory.set(bookId, stored);
       return stored.chapters;
     }
+
+    // A big book that is still loading in the background is counted once it has all its text.
+    if (book && !book.complete) await book.whenComplete;
+    const source = book ?? (await loadBook(bookId));
+    // Loading can re-index a changed linked file, so the key is taken afterwards.
+    const key = keyOf(source.meta.contentVersion);
 
     const chapters: WordCounts[] = [];
     for (const chapter of source.index.chapters) {

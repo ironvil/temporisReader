@@ -3,9 +3,6 @@
  * Pure functions only, so they can be unit tested without a browser.
  */
 
-/** Bump when parsing rules change so stored indexes are rebuilt from the source file. */
-export const PARSER_VERSION = 3;
-
 export type BookFormat = 'txt' | 'md';
 
 export interface Chapter {
@@ -126,7 +123,8 @@ function isHardWrapped(blocks: string[][]): boolean {
   return inner > 0 && ended / inner < 0.5;
 }
 
-function isTxtHeading(line: string): boolean {
+/** "Chapter 12", "第十二章", "序章"… — a short line that names a chapter. */
+export function isTxtHeading(line: string): boolean {
   return line.length <= MAX_TXT_HEADING_LENGTH && TXT_CHAPTER_LINE.test(line);
 }
 

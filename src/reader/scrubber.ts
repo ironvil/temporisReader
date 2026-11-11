@@ -25,7 +25,8 @@ export interface ScrubberHost {
   /** Characters per page, for estimates while dragging. */
   charsPerPage(): number;
   /** Go to the settled position (renders and paginates the chapter). */
-  jumpTo(target: Located): void;
+  /** `offset`: the book-wide character offset `target` was found from. */
+  jumpTo(target: Located, offset: number): void;
 }
 
 export class BookScrubber {
@@ -36,7 +37,7 @@ export class BookScrubber {
   private readonly ticks: HTMLElement;
   private ticksForBook: OpenBook | null = null;
   private chapterStarts: number[] = [];
-  private pending: Located | null = null;
+  private pending: { target: Located; offset: number } | null = null;
   private timer: number | undefined;
 
   /** `indicator`: the footer button that toggles the scrubber (kept in sync via aria-expanded). */
@@ -128,17 +129,17 @@ export class BookScrubber {
     const { page, pages } = estimatePage(offset - starts[target.chapter], chapterEnd - starts[target.chapter], this.host.charsPerPage());
     this.setText(book, target.chapter, `Page ≈${page} of ≈${pages}`, offset);
 
-    this.pending = target;
+    this.pending = { target, offset };
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.commit(), SCRUB_SETTLE_MS);
   }
 
   private commit(): void {
     clearTimeout(this.timer);
-    const target = this.pending;
+    const pending = this.pending;
     this.pending = null;
-    if (!target || !this.host.state().book) return;
-    this.host.jumpTo(target);
+    if (!pending || !this.host.state().book) return;
+    this.host.jumpTo(pending.target, pending.offset);
     this.sync();
   }
 }

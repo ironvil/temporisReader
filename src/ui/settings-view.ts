@@ -1,7 +1,7 @@
 import { languages } from '../languages';
 import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
 import { createBackup, parseBackup, restoreBackup } from '../backup';
-import { decodeText } from '../books/parse';
+import { decodeText } from '@temporis/book-parser';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
 import { knownWords, parseKnownWords, today } from '../vocab/known-words';

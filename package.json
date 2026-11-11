@@ -1,21 +1,26 @@
 {
   "name": "temporis-reader",
-  "version": "0.10.1",
+  "version": "0.13.1",
   "description": "Capacitor hello world with file reading",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "sync": "npm run build && cap sync android",
-    "apk": "npm run sync && cd android && ./gradlew assembleDebug",
+    "apk": "npm run sync && node scripts/gradle.mjs assembleDebug",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "typecheck": "tsc",
-    "apk:release": "npm run sync && cd android && ./gradlew assembleRelease",
+    "check:parser-version": "node scripts/check-parser-version.mjs",
+    "apk:release": "npm run sync && node scripts/gradle.mjs assembleRelease",
     "icons": "node scripts/generate-icons.mjs"
   },
   "type": "module",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "dependencies": {
+    "@temporis/book-parser": "*",
     "@capacitor/android": "^8.6.0",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.0",

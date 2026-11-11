@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { assembleBook, type SourceMeta } from '../../src/books/library';
-import { parseBook } from '../../src/books/parse';
+import { assembleBook, parseBook } from '@temporis/book-parser';
+import { type SourceMeta } from '../../src/books/library';
 import { chapterStartOffsets, estimatePage, globalOffset, guessCharsPerPage, locateOffset } from '../../src/reader/scrub';
 
 const source: SourceMeta = { id: 's', title: 'B', format: 'txt', fileName: null, split: true, path: 's.txt', chapterCount: 0, paragraphCount: 0 };
