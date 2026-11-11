@@ -1,5 +1,6 @@
 import './style.css';
 import { App } from '@capacitor/app';
+import { runAutoBackup } from './auto-backup';
 import { BookFileError, openBook } from './books/library';
 import { watchOpenedFiles } from './books/linked-files';
 import { Reader } from './reader/reader';
@@ -8,6 +9,7 @@ import { BookEditorView } from './ui/book-editor';
 import { closeTopDialog } from './ui/dialog';
 import { toast } from './ui/dom';
 import { LibraryView } from './ui/library-view';
+import { mentionMissingDictionaries } from './missing-dictionaries';
 import { showLinkedFileDialog } from './ui/linked-file-dialog';
 import { SettingsView } from './ui/settings-view';
 
@@ -82,13 +84,22 @@ async function main() {
     } else void App.exitApp();
   });
   void App.addListener('pause', () => void reader.flush());
+  const autoBackup = async () => {
+    const result = await runAutoBackup();
+    // Shown once when backups start failing; settings shows the problem until one works again.
+    if (result.status === 'failed' && result.firstFailure) toast(`Automatic backup failed: ${result.error.message}. See Settings → Backup.`);
+  };
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) void reader.flush();
+    else void autoBackup();
   });
 
   show('library');
   await library.refresh();
   document.body.dataset.ready = 'true';
+  void mentionMissingDictionaries(openSettings);
+  // Not during startup's own work.
+  setTimeout(() => void autoBackup(), 2000);
 
   // An EPUB opened with the app from elsewhere: back to the library, and import it there.
   void watchOpenedFiles(async (file) => {

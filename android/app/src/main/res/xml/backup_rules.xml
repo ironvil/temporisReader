@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup on Android 11 and lower (Android 12+ reads data_extraction_rules.xml). Keep the two
+  in step. Only listed paths are backed up: the library, settings, known words and the books' own
+  texts. Left out, because they're rebuilt or downloaded again:
+    derived/       content indexes, EPUB layouts, word counts (rebuilt when missing)
+    dictionaries/  downloaded dictionaries (too big for the 25 MB quota: over it, nothing is saved)
+    auto-backup.json  this phone's backup folder, whose access doesn't carry over
+  Paths are in getFilesDir(), Capacitor's Directory.Data.
+-->
+<full-backup-content>
+    <include domain="file" path="library.json" />
+    <include domain="file" path="settings.json" />
+    <include domain="file" path="known-words/" />
+    <include domain="file" path="books/" />
+</full-backup-content>

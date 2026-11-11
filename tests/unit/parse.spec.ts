@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { type SourceMeta } from '../../src/books/library';
-import { assembleBook, buildChapters, decodeText, formatFromFileName, joinLines, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '@temporis/book-parser';
+import { assembleBook, buildChapters, decodeText, formatFromFileName, isSceneBreak, joinLines, oldTextOffset, parseBook, parseInlineMarkdown, stripInlineMarkdown } from '@temporis/book-parser';
 
 test.describe('txt parsing', () => {
   test('one paragraph per line with Chinese chapter headings', () => {
@@ -19,6 +19,28 @@ test.describe('txt parsing', () => {
     const book = parseBook(text, 'txt', 'X');
     expect(book.paragraphs).toEqual(['Chapter 1', 'It was a bright cold day in April.', 'The clocks were striking thirteen.']);
     expect(book.chapters.map((c) => c.title)).toEqual(['Chapter 1']);
+  });
+
+  test('lines of only symbols are scene breaks', () => {
+    const book = parseBook('第一章\n她下楼。\n＊＊＊\n母亲。\n* * *\n◇◇◇\n父亲。\n——\n……\nx x x\n结束。', 'txt', 'X');
+    expect(book.paragraphs).toEqual(['第一章', '她下楼。', '母亲。', '父亲。', '——', '……', '结束。']);
+    expect(book.breaks).toEqual([2, 3, 6]);
+    // The lines left out of the text, by the paragraph they came before: kept to move old places.
+    expect(book.removedBreaks).toEqual([[2, 3], [3, 5], [3, 3], [6, 5]]);
+  });
+
+  test('scene breaks: at the start, around headings and at the end are dropped (but still left out of the text)', () => {
+    const book = parseBook('* * *\n第一章\n* * *\n她。\n＊＊＊\n第二章\n他。\n◇◇◇', 'txt', 'X');
+    expect(book.paragraphs).toEqual(['第一章', '她。', '第二章', '他。']);
+    expect(book.breaks).toEqual([]);
+    expect(book.removedBreaks).toEqual([[0, 5], [1, 5], [2, 3], [4, 3]]);
+  });
+
+  test('scene breaks in hard-wrapped text: only a block of its own', () => {
+    const text = 'One line of a\nwrapped paragraph.\n\n* * *\n\nThe next one\nwraps too.\n\n* * *\nnot alone\n\nEnd of it\nall.';
+    const book = parseBook(text, 'txt', 'X');
+    expect(book.paragraphs).toEqual(['One line of a wrapped paragraph.', 'The next one wraps too.', '* * * not alone', 'End of it all.']);
+    expect(book.breaks).toEqual([1]);
   });
 
   test('a file without headings is a single chapter', () => {
@@ -77,6 +99,51 @@ test.describe('markdown parsing', () => {
       { title: 'Chapter One', start: 0, end: 7 },
       { title: 'Chapter Two', start: 7, end: 9 },
     ]);
+    // The `---` after the list is a scene break before the quote.
+    expect(book.breaks).toEqual([5]);
+  });
+
+  test('scene breaks', () => {
+    const md = ['# 第三章', '', '---', '', '她下楼。', '', '“还没梳头？”', '', '---', '', '母亲的房间里。', '', '* * *', '', '***', '', '## Next', '', 'Text', '', '＊＊＊'].join('\n');
+    const book = parseBook(md, 'md', 'X');
+    expect(book.paragraphs).toEqual(['第三章', '她下楼。', '“还没梳头？”', '母亲的房间里。', 'Next', 'Text']);
+    // Not before a chapter's first text or a heading, not at the end, and once for two in a row.
+    expect(book.breaks).toEqual([3]);
+  });
+
+  test('scene breaks: what is and isn’t one', () => {
+    const md = [
+      'Setext heading',
+      '---',
+      '',
+      'A.',
+      '',
+      '- - -',
+      '',
+      'B.',
+      '',
+      '* not a break, a list item',
+      '',
+      '＊＊＊',
+      '',
+      'C.',
+      '',
+      '◇◇◇',
+      'joined with this line, as before',
+      '',
+      '```',
+      '---',
+      '＊＊＊',
+      '```',
+      '',
+      'D.',
+    ].join('\n');
+    const book = parseBook(md, 'md', 'X');
+    expect(book.paragraphs).toEqual(['Setext heading', 'A.', 'B.', '• not a break, a list item', 'C.', '◇◇◇ joined with this line, as before', '---', '＊＊＊', 'D.']);
+    expect(book.headings).toEqual([0]);
+    expect(book.breaks).toEqual([2, 4]);
+    // `- - -` was always left out; only `＊＊＊` used to be a paragraph.
+    expect(book.removedBreaks).toEqual([[4, 3]]);
   });
 
   test('strips inline markdown but keeps snake_case', () => {
@@ -204,4 +271,49 @@ test('formatFromFileName', () => {
   expect(formatFromFileName('a.TXT')).toBe('txt');
   expect(formatFromFileName('a.markdown')).toBe('md');
   expect(formatFromFileName('a.epub')).toBeNull();
+});
+
+test('isSceneBreak', () => {
+  for (const yes of ['* * *', '***', '＊＊＊', '◇◇◇', '◆ ◆ ◆', '⁂', '- - -', '———', '~~~~', '#  #  #', '·  ·  ·', 'x x x', '☆☆☆', '※※※', '　＊　＊　＊'])
+    expect(isSceneBreak(yes), yes).toBe(true);
+  for (const no of ['', '**', '——', '……', '…', 'xxx', 'XXX', '* * * text', '第一章', '!!!', '???', '*'.repeat(41)])
+    expect(isSceneBreak(no), no).toBe(false);
+});
+
+test('oldTextOffset: every character of the old text is the same character now', () => {
+  // Old text with symbol paragraphs at the start, in a row, mid-way and at the end.
+  const old = ['* * *', '一二三', '＊＊＊', '◇◇◇', '四五', '六', '* * *', '七八九十', '***'];
+  const kept = old.filter((p) => !isSceneBreak(p));
+  const now = kept.join('\n');
+  const offsets = kept.map((_, i) => kept.slice(0, i).join('\n').length + (i ? 1 : 0));
+  const removed: [number, number][] = [];
+  let next = 0;
+  for (const p of old) {
+    if (isSceneBreak(p)) removed.push([offsets[next] ?? now.length, p.length]);
+    else next++;
+  }
+  const oldText = old.join('\n');
+  expect(removed.reduce((sum, [, l]) => sum + l + 1, now.length)).toBe(oldText.length);
+  let start = 0;
+  for (const p of old) {
+    for (let c = 0; c < p.length; c++) {
+      const mapped = oldTextOffset(start + c, removed);
+      if (isSceneBreak(p)) expect(offsets.includes(mapped) || mapped === now.length, `${p}[${c}]`).toBe(true);
+      else expect(now[mapped], `${p}[${c}]`).toBe(p[c]);
+    }
+    start += p.length + 1;
+  }
+  // On a removed paragraph: the start of the one after it.
+  expect(oldTextOffset(oldText.indexOf('◇◇◇') + 1, removed)).toBe(now.indexOf('四五'));
+  expect(oldTextOffset(1, removed)).toBe(0);
+  expect(oldTextOffset(oldText.length - 1, removed)).toBe(now.length);
+  expect(oldTextOffset(5, [])).toBe(5);
+});
+
+test('assembleBook offsets scene breaks by the source position', () => {
+  const { index } = assembleBook([
+    { source: source('a', 'A', false), parsed: parseBook('一。\n* * *\n二。', 'txt', 'A') },
+    { source: source('b', 'B', false), parsed: parseBook('三。\n＊＊＊\n四。\n五。\n◇◇◇\n六。', 'txt', 'B') },
+  ]);
+  expect(index.breaks).toEqual([1, 3, 5]);
 });

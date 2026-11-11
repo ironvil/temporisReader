@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup (Google Drive) and phone-to-phone transfer on Android 12+. Keep in step with
+  backup_rules.xml (Android 11 and lower), which explains what's left out and why.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="library.json" />
+        <include domain="file" path="settings.json" />
+        <include domain="file" path="known-words/" />
+        <include domain="file" path="books/" />
+    </cloud-backup>
+    <!-- A transfer can carry up to 2 GB, so dictionaries come along (not half-finished downloads). -->
+    <device-transfer>
+        <include domain="file" path="library.json" />
+        <include domain="file" path="settings.json" />
+        <include domain="file" path="known-words/" />
+        <include domain="file" path="books/" />
+        <include domain="file" path="dictionaries/" />
+        <exclude domain="file" path="dictionaries/cc-cedict.download.gz" />
+        <exclude domain="file" path="dictionaries/wiktionary-fr.download.gz" />
+        <exclude domain="file" path="dictionaries/wiktionary-de.download.gz" />
+    </device-transfer>
+</data-extraction-rules>

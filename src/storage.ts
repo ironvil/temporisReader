@@ -116,3 +116,13 @@ export async function moveFile(from: string, to: string): Promise<void> {
   await removeFile(to);
   await Filesystem.rename({ from, to, directory, toDirectory: directory });
 }
+
+/** The files directly in a folder (none if it doesn't exist). */
+export async function listFiles(path: string): Promise<{ name: string; size: number; modified: number }[]> {
+  try {
+    const { files } = await Filesystem.readdir({ path, directory });
+    return files.filter((f) => f.type === 'file').map((f) => ({ name: f.name, size: f.size, modified: f.mtime }));
+  } catch {
+    return [];
+  }
+}

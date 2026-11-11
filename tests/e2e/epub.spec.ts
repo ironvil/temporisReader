@@ -1,46 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { assembleBook, parseEpub } from '@temporis/book-parser';
-import { dismissLanguageReminder, nextPage } from './helpers';
+import { assembleBook, parseEpub, PARSER_VERSION } from '@temporis/book-parser';
+import { dismissLanguageReminder, nextPage, withStorage } from './helpers';
 
 const MONTE_CRISTO = 'pg17989-images-3.epub';
 const FAUST = 'pg2229-images-3.epub';
 const CHINESE = 'Ha Li _Bo Te Yu Li Xing Zhi Dao - Eliezer Yudkowsky.epub';
+/** Has paragraphs of only `* * *`, which parser version 4 kept as text. */
+const KANT = 'pg6343-images-3.epub';
 const fixture = (name: string) => readFileSync(new URL(`../test epubs/${name}`, import.meta.url));
 
 async function importEpub(page: Page, name: string, as = name): Promise<void> {
   await page.getByTestId('import-input').setInputFiles({ name: as, mimeType: 'application/epub+zip', buffer: fixture(name) });
-}
-
-/** Runs `fn` against the web Filesystem's IndexedDB (where the app's files and the stand-in device storage live). */
-function withStorage<T, A>(page: Page, fn: (s: Storage, arg: A) => Promise<T>, arg: A): Promise<T> {
-  return page.evaluate(
-    async ({ source, arg }) => {
-      const db: IDBDatabase = await new Promise((res, rej) => {
-        const o = indexedDB.open('Disc');
-        o.onsuccess = () => res(o.result);
-        o.onerror = () => rej(o.error);
-      });
-      const store = () => db.transaction('FileStorage', 'readwrite').objectStore('FileStorage');
-      const req = <R>(r: IDBRequest<R>) => new Promise<R>((res, rej) => ((r.onsuccess = () => res(r.result)), (r.onerror = () => rej(r.error))));
-      const s = {
-        keys: async () => (await req(store().getAllKeys())) as string[],
-        get: (key: string) => req(store().get(key)),
-        put: (value: unknown) => req(store().put(value)),
-        remove: (key: string) => req(store().delete(key)),
-      };
-      // eslint-disable-next-line no-new-func
-      return new Function('s', 'arg', `return (${source})(s, arg)`)(s, arg);
-    },
-    { source: fn.toString(), arg },
-  ) as Promise<T>;
-}
-
-interface Storage {
-  keys(): Promise<string[]>;
-  get(key: string): Promise<any>;
-  put(value: unknown): Promise<unknown>;
-  remove(key: string): Promise<unknown>;
 }
 
 const deviceFiles = (page: Page) => withStorage(page, async (s) => (await s.keys()).filter((k) => k.startsWith('/DATA/device-files/') && k.endsWith('.epub')), null);
@@ -97,15 +68,18 @@ test('an EPUB is imported as metadata only, with its title, author and language'
 
   const stored = await withStorage(page, async (s) => {
     const [book] = JSON.parse((await s.get('/DATA/library.json')).content);
-    const bookFiles = (await s.keys()).filter((k) => k.startsWith(`/DATA/books/${book.id}/`));
-    const layout = (await s.get(`/DATA/books/${book.id}/layout.json`))?.content as string | undefined;
-    return { source: book.sources[0], bookFiles: bookFiles.map((k) => k.split('/').pop()), layout };
+    const keys = await s.keys();
+    const bookFiles = keys.filter((k) => k.startsWith(`/DATA/books/${book.id}/`));
+    const derivedFiles = keys.filter((k) => k.startsWith(`/DATA/derived/${book.id}/`));
+    const layout = (await s.get(`/DATA/derived/${book.id}/layout.json`))?.content as string | undefined;
+    return { source: book.sources[0], bookFiles, derivedFiles: derivedFiles.map((k) => k.split('/').pop()), layout };
   }, null);
   expect(stored.source).toMatchObject({ format: 'epub', fileName: MONTE_CRISTO, path: '', file: { name: MONTE_CRISTO, size: fixture(MONTE_CRISTO).length } });
   expect(stored.source.file.checksum).toMatch(/^[0-9a-f]{64}$/);
   // Nothing of the book's text is stored: no source copy, no content.txt or index.json, only the
   // layout (chapters, offsets, which parts of which files) for opening at one chapter.
-  expect(stored.bookFiles).toEqual(['layout.json']);
+  expect(stored.bookFiles).toEqual([]);
+  expect(stored.derivedFiles).toEqual(['layout.json']);
   expect(stored.layout).toContain('Marseille');
   expect(stored.layout).not.toContain('la vigie de Notre-Dame de la Garde');
 
@@ -179,6 +153,55 @@ test('a book indexed by an older EPUB parser gets its chapters redone, keeping t
   await expect(page.locator('.book-details')).toContainText('32 chapters');
   const parser = await withStorage(page, async (s) => JSON.parse((await s.get('/DATA/library.json')).content)[0].sources[0].file.parser, null);
   expect(parser).toBeGreaterThan(1);
+});
+
+test.describe('a book read before scene breaks keeps its exact place', () => {
+  // Parser version 4 kept each `* * *` as a paragraph; now they're breaks between paragraphs, so the
+  // text is shorter. A place saved then is a fraction of the longer text.
+  async function placeSavedByVersion4(page: Page, paragraph: number, char: number): Promise<void> {
+    const book = await parseEpub(new Uint8Array(fixture(KANT)), 'x');
+    const { index, content } = assembleBook([{ source: { id: 's', title: 'x', split: true, chapterCount: 0, paragraphCount: 0 }, parsed: book }]);
+    const before = book.removedBreaks.filter(([p]) => p <= paragraph).reduce((sum, [, length]) => sum + length + 1, 0);
+    const all = book.removedBreaks.reduce((sum, [, length]) => sum + length + 1, 0);
+    const fraction = (index.paragraphOffsets[paragraph] + char + before) / (content.length + all);
+    await withStorage(page, async (s, fraction) => {
+      const entry = await s.get('/DATA/library.json');
+      const books = JSON.parse(entry.content);
+      books[0].sources[0].file.parser = 4;
+      // Paragraph and char were counted with the * * * paragraphs in: only the fraction is used.
+      books[0].progress = { ...books[0].progress, chapter: 0, paragraph: 0, word: 0, char: 0, fraction, updatedAt: 1 };
+      await s.put({ ...entry, content: JSON.stringify(books) });
+      const layout = (await s.keys()).find((k) => k.endsWith('/layout.json'))!;
+      const saved = await s.get(layout);
+      await s.put({ ...saved, content: JSON.stringify({ ...JSON.parse(saved.content), version: 4 }) });
+    }, fraction);
+    await page.reload();
+    await expect(page.locator('body[data-ready]')).toBeAttached();
+  }
+
+  async function reopenedAt(page: Page): Promise<{ chapter: number; paragraph: number; char: number }> {
+    await openBook(page);
+    await backToLibrary(page);
+    const { chapter, paragraph, char } = await withStorage(page, async (s) => JSON.parse((await s.get('/DATA/library.json')).content)[0].progress, null);
+    return { chapter, paragraph, char };
+  }
+
+  test('an EPUB', async ({ page }) => {
+    await importEpub(page, KANT);
+    await expect(page.getByText(/^Imported/)).toBeVisible();
+    // Chapter 47 (paragraphs 362–371) has * * * paragraphs before 367 and 370; three come before 371.
+    await placeSavedByVersion4(page, 371, 7);
+    expect(await reopenedAt(page)).toEqual({ chapter: 46, paragraph: 9, char: 7 });
+
+    // A place on a * * * itself goes to the start of the paragraph after it.
+    await placeSavedByVersion4(page, 370, -3);
+    expect(await reopenedAt(page)).toEqual({ chapter: 46, paragraph: 8, char: 0 });
+
+    // The breaks are shown, and the file is now marked as read by this parser.
+    await openBook(page);
+    const parser = await withStorage(page, async (s) => JSON.parse((await s.get('/DATA/library.json')).content)[0].sources[0].file.parser, null);
+    expect(parser).toBe(PARSER_VERSION);
+  });
 });
 
 test('a big EPUB opens at its saved chapter first; the rest loads in the background', async ({ page }) => {

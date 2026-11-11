@@ -15,11 +15,11 @@
  * So does a new parser (PARSER_VERSION), since it may find different chapters.
  */
 import { detectLanguage, getLanguage } from '../languages';
-import { readJson, readText, removeDir, removeFile, writeJson, writeText } from '../storage';
+import { ensureDir, moveFile, readJson, readText, removeDir, removeFile, writeJson, writeText } from '../storage';
 import { locateOffset } from '../reader/scrub';
 import { parseEpubOffThread, type PartialRead } from './parse-off-thread';
 import { LinkedFileError, linkWebFile, readLinkedFile, releaseLinkedFile, sha256, type LinkedFile, type PickedFile } from './linked-files';
-import { assembleBook, decodeText, EpubError, formatFromFileName, parseBook, PARSER_VERSION, type EpubBook, type EpubLayout, type BookChapter, type BookFormat, type BookIndex, type InlineMark, type ParsedBook } from '@temporis/book-parser';
+import { assembleBook, decodeText, EpubError, oldTextOffset, formatFromFileName, parseBook, PARSER_VERSION, type EpubBook, type EpubLayout, type BookChapter, type BookFormat, type BookIndex, type InlineMark, type ParsedBook } from '@temporis/book-parser';
 
 export interface Progress {
   chapter: number;
@@ -90,6 +90,8 @@ export interface OpenBook {
   paragraph(i: number): string;
   marks(i: number): InlineMark[];
   isHeading(i: number): boolean;
+  /** A scene break comes before paragraph i. */
+  opensScene(i: number): boolean;
   /** Names of linked files that changed since the book was last read (it was re-indexed). */
   changed: string[];
   /**
@@ -156,14 +158,38 @@ interface LegacyBookMeta extends Omit<BookMeta, 'sources'> {
 
 const LIBRARY_FILE = 'library.json';
 const dir = (id: string) => `books/${id}`;
+/**
+ * Files rebuilt from a book's sources when missing (content.txt, index.json, layout.json,
+ * words.json). Kept apart from books/ so Android's backup can leave them out (res/xml/*backup*).
+ */
+export const derivedDir = (id: string) => `derived/${id}`;
+const DERIVED_MOVED = 'derived/moved.json';
+const DERIVED_FILES = ['content.txt', 'index.json', 'layout.json', 'words.json'];
 
 let books: BookMeta[] | null = null;
 let writeChain: Promise<void> = Promise.resolve();
 const bookQueues = new Map<string, Promise<unknown>>();
 
 async function load(): Promise<BookMeta[]> {
-  books ??= ((await readJson<LegacyBookMeta[]>(LIBRARY_FILE)) ?? []).map(migrate);
+  if (!books) {
+    const loaded = ((await readJson<LegacyBookMeta[]>(LIBRARY_FILE)) ?? []).map(migrate);
+    await moveDerivedFiles(loaded);
+    books ??= loaded;
+  }
   return books;
+}
+
+/** Before 0.14 rebuildable files lived next to the sources in books/<id>/; moves them, once. */
+async function moveDerivedFiles(list: BookMeta[]): Promise<void> {
+  if (await readText(DERIVED_MOVED)) return;
+  for (const book of list) {
+    await ensureDir(derivedDir(book.id));
+    for (const name of DERIVED_FILES) {
+      // Fails when the file doesn't exist (an EPUB has no content.txt, stats not counted yet).
+      await moveFile(`${dir(book.id)}/${name}`, `${derivedDir(book.id)}/${name}`).catch(() => undefined);
+    }
+  }
+  await writeJson(DERIVED_MOVED, { movedAt: new Date().toISOString() });
 }
 
 function migrate(book: LegacyBookMeta): BookMeta {
@@ -230,6 +256,8 @@ interface ReadSource {
   changed: boolean;
   /** Indexed by an older parser: chapters may have moved, though the file is the same. */
   reparsed: boolean;
+  /** When reparsed: the version of that parser (0 from before versions were kept). */
+  oldParser?: number;
 }
 
 /** A linked file already read (and checksummed) by the caller. */
@@ -264,8 +292,9 @@ async function readSource(meta: BookMeta, source: SourceMeta, preread?: Preread)
   const parsed = await file.book;
   const changed = checksum !== source.file.checksum;
   const reparsed = !changed && source.file.parser !== PARSER_VERSION;
+  const oldParser = reparsed ? (source.file.parser ?? 0) : undefined;
   if (changed || reparsed) source.file = { ...source.file, checksum, size, parser: PARSER_VERSION };
-  return { source, parsed, declared: parsed.language, changed, reparsed };
+  return { source, parsed, declared: parsed.language, changed, reparsed, oldParser };
 }
 
 /** Supported language id for a declared language tag ("de-DE" → "de"), or null. */
@@ -292,11 +321,12 @@ interface BookLayout {
   /** Offset in the content of each chapter's first paragraph. */
   chapterOffsets: number[];
   headings: number[];
+  breaks: number[];
   paragraphCount: number;
   contentLength: number;
 }
 
-const layoutPath = (id: string) => `${dir(id)}/layout.json`;
+const layoutPath = (id: string) => `${derivedDir(id)}/layout.json`;
 
 async function saveLayout(meta: BookMeta, built: Built, parts: ReadSource[]): Promise<void> {
   let start = 0;
@@ -317,6 +347,7 @@ async function saveLayout(meta: BookMeta, built: Built, parts: ReadSource[]): Pr
     chapters: built.index.chapters,
     chapterOffsets: built.index.chapters.map((c) => built.index.paragraphOffsets[c.start]),
     headings: built.index.headings,
+    breaks: built.index.breaks,
     paragraphCount: built.index.paragraphOffsets.length,
     contentLength: built.content.length,
   };
@@ -339,6 +370,7 @@ function toOpenBook(meta: BookMeta, index: BookIndex, content: string, changed: 
   const { paragraphOffsets } = index;
   const markMap = index.marks;
   const headingSet = new Set(index.headings);
+  const breakSet = new Set(index.breaks);
   return {
     meta,
     index,
@@ -346,6 +378,7 @@ function toOpenBook(meta: BookMeta, index: BookIndex, content: string, changed: 
     paragraph: (i) => content.slice(paragraphOffsets[i], i + 1 < paragraphOffsets.length ? paragraphOffsets[i + 1] - 1 : content.length),
     marks: (i) => markMap[i] ?? [],
     isHeading: (i) => headingSet.has(i),
+    opensScene: (i) => breakSet.has(i),
     changed,
     complete: true,
     hasChapter: () => true,
@@ -406,7 +439,7 @@ async function readPartial(meta: BookMeta, layout: BookLayout, partials: Map<num
   }
   const content = segments.join('\n');
   if (content.length !== layout.contentLength) return null;
-  const index: BookIndex = { version: PARSER_VERSION, paragraphOffsets: offsets, headings: layout.headings, marks, chapters: layout.chapters };
+  const index: BookIndex = { version: PARSER_VERSION, paragraphOffsets: offsets, headings: layout.headings, marks, breaks: layout.breaks, chapters: layout.chapters };
   const book = toOpenBook(meta, index, content, []);
   return { ...book, complete: false, hasChapter: (i) => wanted.includes(i) };
 }
@@ -415,7 +448,7 @@ async function readPartial(meta: BookMeta, layout: BookLayout, partials: Map<num
  * Records a new index in the book's metadata: counts, language, progress (kept on the same chapter,
  * or with `samePlace`, at the same place in the text: the text is unchanged but chapters moved).
  */
-async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], samePlace = false): Promise<void> {
+async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], samePlace = false, oldParser?: number): Promise<void> {
   meta.contentVersion = (meta.contentVersion ?? 0) + 1;
   meta.chapterCount = built.index.chapters.length;
   meta.paragraphCount = built.index.paragraphOffsets.length;
@@ -423,35 +456,56 @@ async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], sam
     const declared = parts.map((p) => languageFromTag(p.declared)).find(Boolean);
     meta.language = declared ?? detectLanguage(built.content.slice(0, 5000));
   }
-  meta.progress = samePlace ? relocateProgress(meta.progress, built) : remapProgress(meta.progress, built);
+  meta.progress = samePlace
+    ? relocateProgress(meta.progress, built, oldParser !== undefined && oldParser < 5 ? removedBreakOffsets(parts, built) : [])
+    : remapProgress(meta.progress, built);
   await persist();
 }
 
 /**
  * Rebuilds the index from the sources, and keeps progress on the same chapter (or, with
  * `samePlace`, at the same place in the text). Books made only of
- * stored text cache it in content.txt and index.json; books with a linked file are never cached.
+ * stored text cache it in derived/<id>/content.txt and index.json; books with a linked file are never cached.
  */
-async function rebuild(meta: BookMeta, samePlace = false): Promise<Built> {
+async function rebuild(meta: BookMeta, samePlace = false, oldParser?: number): Promise<Built> {
   const { built, parts } = await build(meta);
   if (!isLinked(meta)) {
-    await writeText(`${dir(meta.id)}/content.txt`, built.content);
-    await writeJson(`${dir(meta.id)}/index.json`, built.index);
+    await writeText(`${derivedDir(meta.id)}/content.txt`, built.content);
+    await writeJson(`${derivedDir(meta.id)}/index.json`, built.index);
   } else {
-    await removeFile(`${dir(meta.id)}/content.txt`);
-    await removeFile(`${dir(meta.id)}/index.json`);
+    await removeFile(`${derivedDir(meta.id)}/content.txt`);
+    await removeFile(`${derivedDir(meta.id)}/index.json`);
   }
-  await applyBuild(meta, built, parts, samePlace);
+  await applyBuild(meta, built, parts, samePlace, oldParser);
   if (isLinked(meta)) await saveLayout(meta, built, parts);
   return built;
 }
 
-/** Progress at the same character of the text (from its fraction), in the new chapters. */
-function relocateProgress(progress: Progress | null, { content, index }: { content: string; index: BookIndex }): Progress | null {
+/**
+ * Progress at the same character of the text (from its fraction), in the new chapters. `removed`:
+ * paragraphs the old text had that the new one doesn't (see `removedBreakOffsets`).
+ */
+function relocateProgress(progress: Progress | null, { content, index }: { content: string; index: BookIndex }, removed: [number, number][] = []): Progress | null {
   if (!progress || !index.chapters.length) return null;
-  const located = locateOffset(index, content.length, Math.round(progress.fraction * content.length));
+  const oldLength = removed.reduce((sum, [, length]) => sum + length + 1, content.length);
+  const offset = oldTextOffset(Math.round(progress.fraction * oldLength), removed);
+  const located = locateOffset(index, content.length, offset);
   const c = index.chapters[located.chapter];
   return { ...progress, ...located, source: c.source, sourceChapter: c.sourceChapter };
+}
+
+/**
+ * The paragraphs of only symbols (`* * *`) that parsers before version 5 kept as text and are now
+ * scene breaks: [offset in the content that each came just before, its length], in order.
+ */
+function removedBreakOffsets(parts: ReadSource[], { content, index }: Built): [number, number][] {
+  const out: [number, number][] = [];
+  let base = 0;
+  for (const { parsed } of parts) {
+    for (const [p, length] of parsed.removedBreaks) out.push([index.paragraphOffsets[base + p] ?? content.length, length]);
+    base += parsed.paragraphs.length;
+  }
+  return out;
 }
 
 function remapProgress(progress: Progress | null, { content, index }: { content: string; index: BookIndex }): Progress | null {
@@ -780,7 +834,10 @@ function loadLinked(meta: BookMeta, preread?: Preread, layoutValid = false): Pro
     const { built, parts } = await build(meta, preread);
     const changed = parts.filter((p) => p.changed).map((p) => p.source.file!.name);
     if (changed.length) await applyBuild(meta, built, parts);
-    else if (parts.some((p) => p.reparsed)) await applyBuild(meta, built, parts, true);
+    else if (parts.some((p) => p.reparsed)) {
+      // The old text was all made by the oldest parser that made any of it.
+      await applyBuild(meta, built, parts, true, Math.min(...parts.map((p) => p.oldParser ?? PARSER_VERSION)));
+    }
     if (changed.length || !layoutValid) await saveLayout(meta, built, parts);
     return { built, changed };
   });
@@ -799,13 +856,14 @@ export async function loadBook(id: string): Promise<OpenBook> {
     const layoutValid = layoutMatches(meta, await readJson<BookLayout>(layoutPath(id)));
     ({ built: { index, content }, changed } = await loadLinked(meta, undefined, layoutValid));
   } else {
-    index = await readJson<BookIndex>(`${dir(id)}/index.json`);
-    content = await readText(`${dir(id)}/content.txt`);
+    index = await readJson<BookIndex>(`${derivedDir(id)}/index.json`);
+    content = await readText(`${derivedDir(id)}/content.txt`);
     if (!index || index.version !== PARSER_VERSION || content === null) {
       // Parsing rules changed (or files are damaged): rebuild from the original sources.
       // A new parser may move chapters, so the place in the text is what's kept.
       const reparsed = !!index && index.version !== PARSER_VERSION;
-      ({ index, content } = await serial(id, () => rebuild(meta, reparsed)));
+      const oldParser = reparsed ? index!.version : undefined;
+      ({ index, content } = await serial(id, () => rebuild(meta, reparsed, oldParser)));
     }
   }
   if (!index.chapters.length) throw new Error('This book has no chapters yet');
@@ -879,5 +937,6 @@ export async function deleteBook(id: string): Promise<void> {
   books = (await load()).filter((b) => b.id !== id);
   await persist();
   await removeDir(dir(id));
+  await removeDir(derivedDir(id));
   for (const source of removed?.sources ?? []) if (source.file) await releaseIfUnused(source.file.uri);
 }

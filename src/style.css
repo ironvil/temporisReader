@@ -380,6 +380,16 @@ progress {
 .page-flow p {
   margin: 0 0 0.9em;
 }
+.page-flow p.new-scene::before {
+  content: '*\2003*\2003*' / '';
+  display: block;
+  margin: 1.4em 0 1.3em;
+  text-align: center;
+  text-indent: 0;
+  color: var(--muted);
+  /* Kept on the same page as the text after it. */
+  break-after: avoid;
+}
 .page-flow h2 {
   font-size: 1.15em;
   line-height: 1.4;
@@ -1144,4 +1154,7 @@ select:focus {
 .lang-link svg {
   flex: none;
   color: var(--muted);
+}
+.auto-backup-error {
+  color: var(--danger);
 }

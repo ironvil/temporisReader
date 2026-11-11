@@ -14,6 +14,8 @@ export interface BookIndex {
   headings: number[];
   /** Bold/italic ranges for paragraphs that have any. */
   marks: Record<number, InlineMark[]>;
+  /** Paragraphs a scene break comes before. */
+  breaks: number[];
   chapters: BookChapter[];
 }
 
@@ -36,6 +38,7 @@ export function assembleBook(parts: { source: AssembleSource; parsed: ParsedBook
   const paragraphs: string[] = [];
   const headings: number[] = [];
   const marks: Record<number, InlineMark[]> = {};
+  const breaks: number[] = [];
   const chapters: BookChapter[] = [];
 
   for (const { source, parsed } of parts) {
@@ -48,6 +51,7 @@ export function assembleBook(parts: { source: AssembleSource; parsed: ParsedBook
     }
     paragraphs.push(...parsed.paragraphs);
     headings.push(...parsed.headings.map((h) => h + base));
+    breaks.push(...parsed.breaks.map((b) => b + base));
     for (const [p, m] of Object.entries(parsed.marks)) marks[Number(p) + base] = m;
 
     const own: Chapter[] = source.split ? parsed.chapters : [{ title: source.title, start: 0, end: n }];
@@ -63,6 +67,6 @@ export function assembleBook(parts: { source: AssembleSource; parsed: ParsedBook
   }
   return {
     content: paragraphs.join('\n'),
-    index: { version: PARSER_VERSION, paragraphOffsets, headings, marks, chapters },
+    index: { version: PARSER_VERSION, paragraphOffsets, headings, marks, breaks, chapters },
   };
 }

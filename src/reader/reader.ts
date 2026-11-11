@@ -469,6 +469,8 @@ export class Reader {
     this.blocks = [];
     for (let p = chapter.start; p < chapter.end; p++) {
       const block = el(book.isHeading(p) ? 'h2' : 'p', { 'data-block': String(p - chapter.start) });
+      // The break's * * * is drawn by CSS: it isn't text (no lookups, not counted).
+      if (book.opensScene(p)) block.classList.add('new-scene');
       block.append(...renderInline(book.paragraph(p), book.marks(p)));
       this.blocks.push(block);
     }

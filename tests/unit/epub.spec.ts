@@ -203,6 +203,51 @@ test.describe('real EPUBs', () => {
   });
 });
 
+test('scene breaks: <hr> and paragraphs of only symbols', async () => {
+  const body = (t: string) => `<h1>${t}</h1><p>Un.</p><hr/><p>Deux.</p><p class="center">* * *</p><p>Trois.</p><hr/>`;
+  const epub = makeEpub({ docs: [{ id: 'a', href: 'a.xhtml', body: body('I') }, { id: 'b', href: 'b.xhtml', body: '<hr/>' + body('II') }] });
+  const book = await parseEpub(epub, 'x');
+  expect(book.paragraphs).toEqual(['I', 'Un.', 'Deux.', 'Trois.', 'II', 'Un.', 'Deux.', 'Trois.']);
+  expect(book.breaks).toEqual([2, 3, 6, 7]);
+  // Reading a chapter alone gives the same paragraphs (the * * * is left out there too).
+  const part = await readEpubParagraphs(epub, book.layout, 4, 8);
+  expect(part.paragraphs).toEqual(book.paragraphs.slice(4));
+});
+
+test('scene breaks: a TOC link to a * * * goes to the text after it, with no break at the chapter’s start', async () => {
+  const book = await parseEpub(
+    makeEpub({
+      docs: [{ id: 'a', href: 'a.xhtml', body: '<p>Un.</p><p id="s2">* * *</p><p>Deux.</p><hr id="s3"/><p>Trois.</p><p>* * *</p><p>Quatre.</p>' }],
+      nav: '<nav epub:type="toc"><ol><li><a href="a.xhtml">I</a></li><li><a href="a.xhtml#s2">II</a></li><li><a href="a.xhtml#s3">III</a></li></ol></nav>',
+    }),
+    'x',
+  );
+  expect(book.paragraphs).toEqual(['Un.', 'Deux.', 'Trois.', 'Quatre.']);
+  expect(book.chapters.map((c) => [c.title, c.start])).toEqual([['I', 0], ['II', 1], ['III', 2]]);
+  expect(book.breaks).toEqual([3]);
+  expect(book.removedBreaks).toEqual([[1, 5], [3, 5]]);
+});
+
+test('scene breaks: a contents list still ends at a * * *, and Gutenberg’s header takes its breaks with it', async () => {
+  const links = ['a', 'b', 'c'].map((x) => `<p><a href="${x}.xhtml">Chapitre ${x}</a></p>`).join('');
+  const epub = makeEpub({
+    docs: [
+      { id: 'h', href: 'h.xhtml', body: '<p>Header.</p><p>* * *</p><p>*** START OF THE PROJECT GUTENBERG EBOOK X ***</p><p>Titre.</p>' },
+      { id: 't', href: 't.xhtml', body: `<p>Contents</p>${links}<p>* * *</p><p>Après.</p>` },
+      ...['a', 'b', 'c'].map((x) => ({ id: x, href: `${x}.xhtml`, body: `<h1>${x}</h1><p>Texte ${x}.</p><p>◇◇◇</p><p>Suite ${x}.</p>` })),
+    ],
+  });
+  const book = await parseEpub(epub, 'x');
+  expect(book.paragraphs.slice(0, 2)).toEqual(['Titre.', 'Après.']);
+  // The * * * after the contents list is left out but marks nothing (only removed text came before it).
+  expect(book.breaks).toEqual([4, 7, 10]);
+  expect(book.removedBreaks).toEqual([[1, 5], [4, 3], [7, 3], [10, 3]]);
+  // Each chapter read alone is the same text.
+  for (const c of book.chapters) {
+    expect((await readEpubParagraphs(epub, book.layout, c.start, c.end)).paragraphs).toEqual(book.paragraphs.slice(c.start, c.end));
+  }
+});
+
 test.describe('reading one chapter from its own files', () => {
   // Every chapter of every test EPUB, read alone, is exactly what the full parse gives.
   for (const name of readdirSync(new URL('../test epubs/', import.meta.url))) {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { chineseBook, importBook, nextPage, openFirstBook, pageIndicator, settled, swipe } from './helpers';
+import { chineseBook, importBook, nextPage, openFirstBook, pageIndicator, settled, swipe, withStorage } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -29,6 +29,98 @@ test('renders markdown bold and italics', async ({ page }) => {
   await expect(page.locator('.page-flow em').first()).toHaveText('白金色');
   await expect(page.locator('.page-flow strong em')).toHaveText('非常');
   await expect(page.locator('.page-flow p')).toHaveText('她的头发是白金色的，非常长。');
+});
+
+test('a scene break shows as a line of asterisks, not as text', async ({ page }) => {
+  await importBook(page, 'scenes.md', '# 第三章\n\n“还没梳头？”\n\n---\n\n母亲的房间里。\n');
+  await openFirstBook(page);
+  const paragraphs = page.locator('.page-flow p');
+  await expect(paragraphs).toHaveText(['“还没梳头？”', '母亲的房间里。']);
+  await expect(paragraphs.nth(1)).toHaveClass('new-scene');
+  const mark = await paragraphs.nth(1).evaluate((p) => getComputedStyle(p, '::before').content);
+  expect(mark).toContain('*\u2003*\u2003*');
+  // It takes up space between the scenes: from the end of one to the text of the next.
+  const { gap, lineHeight } = await paragraphs.evaluateAll(([first, second]) => {
+    const range = document.createRange();
+    range.selectNodeContents(second);
+    return { gap: range.getClientRects()[0].top - first.getBoundingClientRect().bottom, lineHeight: parseFloat(getComputedStyle(second).lineHeight) };
+  });
+  expect(gap).toBeGreaterThan(2.5 * lineHeight);
+});
+
+test('a scene break is never left at the bottom of a page, away from its text', async ({ page }) => {
+  // A break before every paragraph, of varied lengths, so that some fall at a page's end.
+  const paragraphs = Array.from({ length: 80 }, (_, i) => '她下楼了。'.repeat(1 + ((i * 7) % 9)));
+  await importBook(page, 'breaks.md', `# 书\n\n${paragraphs.join('\n\n---\n\n')}\n`);
+  await openFirstBook(page);
+  const stranded = await page.locator('.page-flow p.new-scene').evaluateAll((ps) =>
+    ps.filter((p) => {
+      // The paragraph's first box holds the asterisks; its text must start in the same column.
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      return Math.abs(p.getClientRects()[0].left - range.getClientRects()[0].left) > 1;
+    }).length,
+  );
+  expect(stranded).toBe(0);
+  expect((await pageIndicator(page)).total).toBeGreaterThan(5);
+
+  // Pages through the breaks come back the same: forward and back, and after reopening.
+  const firstText = () => page.locator('.page-flow').evaluate((flow) => {
+    const area = flow.parentElement!.getBoundingClientRect();
+    const p = [...flow.querySelectorAll('p')].find((p) => [...p.getClientRects()].some((r) => r.left >= area.left && r.right <= area.right));
+    return p?.textContent;
+  });
+  await nextPage(page, 4);
+  await settled(page);
+  const at = await pageIndicator(page);
+  const text = await firstText();
+  await nextPage(page);
+  await swipe(page, 'right');
+  await settled(page);
+  expect(await pageIndicator(page)).toEqual(at);
+  await page.getByRole('button', { name: 'Library' }).click();
+  await openFirstBook(page);
+  await settled(page);
+  expect(await pageIndicator(page)).toEqual(at);
+  expect(await firstText()).toBe(text);
+});
+
+test('a txt book read before scene breaks keeps its exact place', async ({ page }) => {
+  await importBook(page, 'scenes.txt', '第一章\n一。\n* * *\n二。\n＊＊＊\n◇◇◇\n三三三三三三三三三三。\n第二章\n四。\n* * *\n');
+  // Its text as parser version 4 made it, with the * * * lines as paragraphs.
+  const old = ['第一章', '一。', '* * *', '二。', '＊＊＊', '◇◇◇', '三三三三三三三三三三。', '第二章', '四。', '* * *'];
+  const oldLength = old.join('\n').length;
+  const savedAt = async (paragraph: number, char: number) => {
+    const fraction = (old.slice(0, paragraph).join('\n').length + (paragraph ? 1 : 0) + char) / oldLength;
+    await withStorage(page, async (s, fraction) => {
+      const entry = await s.get('/DATA/library.json');
+      const books = JSON.parse(entry.content);
+      books[0].progress = { ...books[0].progress, chapter: 0, paragraph: 0, word: 0, char: 0, fraction, updatedAt: 1 };
+      await s.put({ ...entry, content: JSON.stringify(books) });
+      const key = `/DATA/derived/${books[0].id}/index.json`;
+      const index = await s.get(key);
+      await s.put({ ...index, content: JSON.stringify({ ...JSON.parse(index.content), version: 4 }) });
+    }, fraction);
+    await page.reload();
+    await openFirstBook(page);
+    await page.getByRole('button', { name: 'Library' }).click();
+    const { chapter, paragraph: p, char: c } = await withStorage(page, async (s) => JSON.parse((await s.get('/DATA/library.json')).content)[0].progress, null);
+    return [chapter, p, c];
+  };
+  expect(await savedAt(6, 4)).toEqual([0, 3, 4]); // 三…, after three * * * paragraphs
+  expect(await savedAt(5, 1)).toEqual([0, 3, 0]); // on ◇◇◇: the start of the paragraph after it
+  expect(await savedAt(3, 0)).toEqual([0, 2, 0]); // 二。
+  expect(await savedAt(8, 1)).toEqual([1, 1, 1]); // 四。 in chapter 2
+  expect(await savedAt(9, 2)).toEqual([1, 1, 1]); // the * * * at the very end: the last character
+  // Re-indexed with the breaks before 二 and 三 (none at the end of chapter 2).
+  const index = await withStorage(page, async (s) => {
+    const [book] = JSON.parse((await s.get('/DATA/library.json')).content);
+    return JSON.parse((await s.get(`/DATA/derived/${book.id}/index.json`)).content);
+  }, null);
+  expect(index.breaks).toEqual([2, 3]);
+  await openFirstBook(page);
+  await expect(page.locator('.page-flow p')).toHaveText(['四。']);
+  await expect(page.locator('.page-flow p.new-scene')).toHaveCount(0);
 });
 
 test('single-chapter books hide the chapter number', async ({ page }) => {

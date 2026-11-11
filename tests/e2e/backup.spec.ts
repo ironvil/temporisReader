@@ -90,6 +90,11 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await fresh.waitForEvent('load');
   await expect(fresh.locator('body[data-ready]')).toBeAttached();
 
+  // Known words came back without their dictionary: said once, at startup.
+  const notice = fresh.getByRole('dialog', { name: 'Add Chinese again?' });
+  await expect(notice).toContainText('Your known words for Chinese are here, but its dictionary isn’t');
+  await notice.getByRole('button', { name: 'Not now' }).click();
+
   // Library, progress and order of books.
   await expect
     .poll(() => fresh.locator('.book').evaluateAll((els) => els.map((e) => e.querySelector('.book-name')!.textContent + '|' + e.querySelector('.book-details')!.textContent)))

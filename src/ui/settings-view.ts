@@ -1,6 +1,16 @@
 import { languages } from '../languages';
 import type { Dictionary, DictionaryState, LanguageModule } from '../languages/types';
 import { createBackup, parseBackup, restoreBackup } from '../backup';
+import {
+  autoBackupState,
+  chooseBackupFolder,
+  KEEP_BACKUPS,
+  runAutoBackup,
+  setBackupFrequency,
+  turnOffAutoBackup,
+  type AutoBackupState,
+  type Frequency,
+} from '../auto-backup';
 import { decodeText } from '@temporis/book-parser';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
@@ -93,6 +103,7 @@ export class SettingsView {
       el('div', { class: 'card lang-list' }, ...rows),
       el('h2', {}, 'Backup'),
       this.backupCard(),
+      await this.autoBackupCard(),
       el('h2', {}, 'About'),
       el('div', { class: 'card muted' }, `Temporis Reader ${__APP_VERSION__}`),
     ];
@@ -175,6 +186,78 @@ export class SettingsView {
       el('p', { class: 'muted' }, 'One file with your books, chapters, reading progress, known words and settings. Dictionaries aren’t included: add your languages again after restoring on a new install.'),
       el('div', { class: 'actions' }, backupButton, restoreButton, fileInput),
     );
+  }
+
+  /** Automatic backups to a chosen folder (src/auto-backup.ts). */
+  private async autoBackupCard(): Promise<HTMLElement> {
+    const card = el('div', { class: 'card auto-backup', 'data-auto-backup': '' });
+    const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+    const draw = (state: AutoBackupState) => {
+      const title = el('p', { class: 'card-title' }, 'Automatic backups');
+      if (!state.folder) {
+        const choose = el('button', { type: 'button', class: 'button' }, 'Choose a folder');
+        choose.addEventListener('click', () => void act(choose, async () => (await chooseBackupFolder()) && (await runAutoBackup({ now: true }))));
+        card.replaceChildren(
+          title,
+          el('p', { class: 'muted' }, `Off. Choose a folder, on this phone or in the cloud (Google Drive, Dropbox…), and the same backup file is saved there automatically, keeping the last ${KEEP_BACKUPS}.`),
+          el('div', { class: 'actions' }, choose),
+        );
+        return;
+      }
+
+      const frequency = el(
+        'select',
+        { 'aria-label': 'How often' },
+        ...(['daily', 'weekly'] as Frequency[]).map((f) => el('option', { value: f, selected: state.frequency === f }, f === 'daily' ? 'Daily' : 'Weekly')),
+      );
+      frequency.addEventListener('change', () => void setBackupFrequency(frequency.value as Frequency));
+      const last = state.last
+        ? `Last backup: ${when(state.last.at)} (${state.last.file})`
+        : 'No backup yet.';
+      const problem = state.error
+        ? el(
+            'p',
+            { class: 'auto-backup-error', role: 'alert' },
+            state.error.problem === 'failed'
+              ? `The last backup failed: ${state.error.message}`
+              : `${state.error.message}. Choose the folder again to keep backing up.`,
+          )
+        : null;
+
+      const now = el('button', { type: 'button', class: 'button' }, 'Back up now');
+      now.addEventListener('click', () => void act(now, () => runAutoBackup({ now: true })));
+      const change = el('button', { type: 'button', class: 'button secondary' }, 'Change folder');
+      change.addEventListener('click', () => void act(change, async () => (await chooseBackupFolder()) && (await runAutoBackup({ now: true }))));
+      const off = el('button', { type: 'button', class: 'button secondary' }, 'Turn off');
+      off.addEventListener('click', () => void act(off, turnOffAutoBackup));
+
+      card.replaceChildren(
+        title,
+        el('p', {}, 'Saving to ', el('strong', { 'data-backup-folder': '' }, state.folder.name), `, keeping the last ${KEEP_BACKUPS}. Made when the app opens, if one is due and anything changed.`),
+        el('div', { class: 'setting-row' }, el('span', {}, 'How often'), frequency),
+        el('p', { class: 'muted', 'data-last-backup': '' }, last),
+        ...(problem ? [problem] : []),
+        el('div', { class: 'actions' }, now, change, off),
+      );
+    };
+
+    /** Runs a button's action with the button disabled, reports failures, and redraws. */
+    const act = async (button: HTMLButtonElement, action: () => Promise<unknown>) => {
+      button.disabled = true;
+      try {
+        const result = await action();
+        if (result && typeof result === 'object' && 'status' in result && result.status === 'written') toast('Backup saved');
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err));
+      } finally {
+        button.disabled = false;
+        if (card.isConnected) draw(await autoBackupState());
+      }
+    };
+
+    draw(await autoBackupState());
+    return card;
   }
 
   private readingCard(previewLanguages: LanguageModule[]): HTMLElement {

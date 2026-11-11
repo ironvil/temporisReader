@@ -18,7 +18,7 @@
  *   (Ebookmaker's mark for a heading after blank lines) or that read like one ("Chapter 12", "第十二章").
  *   Consecutive heading lines make one chapter title: "Erster Teil · Von dem Raume".
  */
-import { decodeText, isTxtHeading, type InlineMark, type MarkKind, type ParsedBook } from './parse';
+import { decodeText, isSceneBreak, isTxtHeading, SceneBreaks, type InlineMark, type MarkKind, type ParsedBook } from './parse';
 import { attr, tokenize } from './xml';
 import { ZipArchive, ZipError } from './zip';
 
@@ -146,7 +146,7 @@ export async function parseEpub(bytes: Uint8Array, fallbackTitle: string): Promi
     builder.document(await read(item.path), item.path);
     docPaths.push(item.path);
   }
-  const { paragraphs, headings, spaced, spacedGroup, docStarts, removed, marks, anchors, docOf, ordinals } = builder.finish();
+  const { paragraphs, headings, breaks: allBreaks, removedBreaks, spaced, spacedGroup, docStarts, removed, marks, anchors, docOf, ordinals } = builder.finish();
   if (!docPaths.length || !paragraphs.length) throw new EpubError('That EPUB has no readable text');
 
   const title = pkg.title || fallbackTitle;
@@ -170,6 +170,9 @@ export async function parseEpub(bytes: Uint8Array, fallbackTitle: string): Promi
   }
   for (const p of added) delete marks[p];
   const allHeadings = added.length ? [...new Set([...headings, ...added])].sort((a, b) => a - b) : headings;
+  // Nor at the start of a chapter (one that starts without a heading, from the TOC).
+  const skipped = new Set([...allHeadings, ...chapters.map((c) => c.start)]);
+  const breaks = allBreaks.filter((p) => !skipped.has(p));
 
   const layout: EpubLayout = { docs: [], headings: allHeadings, paragraphCount: paragraphs.length };
   docOf.forEach((doc, p) => {
@@ -183,7 +186,7 @@ export async function parseEpub(bytes: Uint8Array, fallbackTitle: string): Promi
     else last!.kept.push([ordinals[p], ordinals[p] + 1]);
   });
 
-  return { title, author: pkg.authors.join(', ') || null, language: pkg.language, paragraphs, headings: allHeadings, marks, chapters, layout };
+  return { title, author: pkg.authors.join(', ') || null, language: pkg.language, paragraphs, headings: allHeadings, marks, breaks, removedBreaks, chapters, layout };
 }
 
 /**
@@ -568,6 +571,8 @@ class ParagraphBuilder {
   readonly ordinals: number[] = [];
   private ordinal = 0;
   readonly headings: number[] = [];
+  /** Scene breaks (<hr>, or a paragraph of only `* * *`) between paragraphs. */
+  private readonly scenes = new SceneBreaks();
   readonly marks: Record<number, InlineMark[]> = {};
   /** "path" and "path#id" → index of the paragraph they point at. */
   readonly anchors = new Map<string, number>();
@@ -602,6 +607,8 @@ class ParagraphBuilder {
     this.flush();
     this.endLinkRun();
     this.ordinal = 0;
+    // A break at the end of one document doesn't run on into the next.
+    this.scenes.clear();
     this.docStarts.push(this.paragraphs.length);
     this.anchor(path);
     this.inLink = 0;
@@ -663,7 +670,13 @@ class ParagraphBuilder {
           continue;
         }
         if (t.name === 'img' || t.name === 'hr') {
-          if (!skip && t.name === 'hr') this.flush();
+          if (!skip && t.name === 'hr') {
+            this.flush();
+            this.scenes.mark();
+            // A link to the break goes to the text after it.
+            const id = attr(t.attrs, 'id');
+            if (id) this.anchor(`${path}#${id}`);
+          }
           continue;
         }
         const frame = open(t.name, t.attrs);
@@ -693,6 +706,7 @@ class ParagraphBuilder {
     this.docOf.length = start;
     this.ordinals.length = start;
     while (this.headings.length && this.headings.at(-1)! >= start) this.headings.pop();
+    this.scenes.rollBack(start);
     while (this.spaced.length && this.spaced.at(-1)! >= start) this.spacedGroup.delete(this.spaced.pop()!);
     for (const key of Object.keys(this.marks)) if (Number(key) >= start) delete this.marks[Number(key)];
     for (const [key, index] of this.anchors) {
@@ -771,6 +785,13 @@ class ParagraphBuilder {
       this.reset();
       return;
     }
+    if (text && !this.heading && isSceneBreak(text)) {
+      // Ends a contents list as the paragraph it used to be did.
+      if (!linkOnly) this.endLinkRun();
+      this.scenes.markText(text.length);
+      this.reset();
+      return;
+    }
     if (text) {
       if (!linkOnly) this.endLinkRun();
       const index = this.paragraphs.length;
@@ -778,6 +799,7 @@ class ParagraphBuilder {
       this.paragraphs.push(text);
       this.docOf.push(this.docStarts.length - 1);
       this.ordinals.push(this.ordinal++);
+      this.scenes.paragraph(index, this.heading > 0);
       if (this.heading) this.headings.push(index);
       else {
         if (this.spacedBlock) {
@@ -806,12 +828,15 @@ class ParagraphBuilder {
   finish() {
     this.flush();
     this.endLinkRun();
+    this.scenes.finish(this.paragraphs.length);
     for (const key of this.pendingAnchors) this.anchors.set(key, this.paragraphs.length);
     this.pendingAnchors = [];
     this.spacedBlock = 0;
     return {
       paragraphs: this.paragraphs,
       headings: this.headings,
+      breaks: this.scenes.breaks,
+      removedBreaks: this.scenes.removed,
       spaced: this.spaced,
       spacedGroup: this.spacedGroup,
       docStarts: this.docStarts,

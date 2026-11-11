@@ -1,6 +1,6 @@
 {
   "name": "temporis-reader",
-  "version": "0.13.1",
+  "version": "0.15.0",
   "description": "Capacitor hello world with file reading",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,8 @@
     "typecheck": "tsc",
     "check:parser-version": "node scripts/check-parser-version.mjs",
     "apk:release": "npm run sync && node scripts/gradle.mjs assembleRelease",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "test:android": "node scripts/android-test.mjs"
   },
   "type": "module",
   "private": true,

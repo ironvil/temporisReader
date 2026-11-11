@@ -15,8 +15,8 @@ android {
         applicationId "com.temporis.reader"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 32
-        versionName "0.13.1"
+        versionCode 34
+        versionName "0.15.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -41,6 +41,12 @@ android {
             }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    // Release APKs are named after their version (temporis-reader-0.14.0.apk), so copies can be told apart.
+    applicationVariants.configureEach { variant ->
+        if (variant.buildType.name == 'release') {
+            variant.outputs.configureEach { outputFileName = "temporis-reader-${variant.versionName}.apk" }
         }
     }
 }

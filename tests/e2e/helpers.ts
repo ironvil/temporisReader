@@ -294,3 +294,34 @@ export async function swipe(page: Page, direction: 'left' | 'right'): Promise<vo
   await page.mouse.move(to, y, { steps: 6 });
   await page.mouse.up();
 }
+
+/** Runs `fn` against the web Filesystem's IndexedDB (where the app's files and the stand-in device storage live). */
+export function withStorage<T, A>(page: Page, fn: (s: Storage, arg: A) => Promise<T>, arg: A): Promise<T> {
+  return page.evaluate(
+    async ({ source, arg }) => {
+      const db: IDBDatabase = await new Promise((res, rej) => {
+        const o = indexedDB.open('Disc');
+        o.onsuccess = () => res(o.result);
+        o.onerror = () => rej(o.error);
+      });
+      const store = () => db.transaction('FileStorage', 'readwrite').objectStore('FileStorage');
+      const req = <R>(r: IDBRequest<R>) => new Promise<R>((res, rej) => ((r.onsuccess = () => res(r.result)), (r.onerror = () => rej(r.error))));
+      const s = {
+        keys: async () => (await req(store().getAllKeys())) as string[],
+        get: (key: string) => req(store().get(key)),
+        put: (value: unknown) => req(store().put(value)),
+        remove: (key: string) => req(store().delete(key)),
+      };
+      // eslint-disable-next-line no-new-func
+      return new Function('s', 'arg', `return (${source})(s, arg)`)(s, arg);
+    },
+    { source: fn.toString(), arg },
+  ) as Promise<T>;
+}
+
+export interface Storage {
+  keys(): Promise<string[]>;
+  get(key: string): Promise<any>;
+  put(value: unknown): Promise<unknown>;
+  remove(key: string): Promise<unknown>;
+}

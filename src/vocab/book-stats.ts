@@ -5,7 +5,7 @@
  * in books/<id>/words.json, keyed by the book's content version and the language's segmentation
  * key (dictionary version). Percentages are then cheap to recompute whenever known words change.
  */
-import { getBook, loadBook, type OpenBook } from '../books/library';
+import { derivedDir, getBook, loadBook, type OpenBook } from '../books/library';
 import type { LanguageModule } from '../languages/types';
 import { readJson, writeJson } from '../storage';
 import { keyedWords } from '../languages/word-keys';
@@ -73,7 +73,7 @@ export function bookWordCounts(bookId: string, lang: LanguageModule, book?: Open
     const meta = book?.meta ?? (await getBook(bookId));
     const cached = memory.get(bookId);
     if (cached?.key === keyOf(meta.contentVersion)) return cached.chapters;
-    const path = `books/${bookId}/words.json`;
+    const path = `${derivedDir(bookId)}/words.json`;
     const stored = await readJson<StoredCounts>(path);
     if (stored?.key === keyOf(meta.contentVersion)) {
       memory.set(bookId, stored);

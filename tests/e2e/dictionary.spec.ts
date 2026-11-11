@@ -241,3 +241,35 @@ test('tapping anywhere outside the open popup only closes it', async ({ page }) 
   await expect(popup).toBeHidden();
   await expect(page.locator('.scrubber')).toBeVisible();
 });
+
+test('tapping a scene break’s asterisks looks nothing up; the text after it still can', async ({ page }) => {
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'scenes.md', '# 书\n\n她的头发。\n\n---\n\n头发是白金的。\n');
+  await openFirstBook(page);
+  const scene = page.locator('.page-flow p.new-scene');
+  // Halfway between the paragraph's top and its text: on the asterisks.
+  const { x, y } = await scene.evaluate((p) => {
+    const box = p.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    return { x: box.left + box.width / 2, y: (box.top + range.getClientRects()[0].top) / 2 };
+  });
+  await page.mouse.click(x, y);
+  await page.waitForTimeout(300);
+  await expect(page.locator('.lookup-popup')).toBeHidden();
+  await page.mouse.click(x - 30, y);
+  await page.waitForTimeout(300);
+  await expect(page.locator('.lookup-popup')).toBeHidden();
+
+  // The first word after the break: 头发 of the second paragraph, not the first.
+  const first = await scene.evaluate((p) => {
+    const range = document.createRange();
+    range.setStart(p.firstChild!, 0);
+    range.setEnd(p.firstChild!, 1);
+    const r = range.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(first.x, first.y);
+  await expect(page.locator('.lookup-popup .zh-hanzi')).toHaveText('头发');
+});

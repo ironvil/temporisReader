@@ -4,4 +4,4 @@
  * open, keeping the reading position at the same place in the text.
  * `npm run check:parser-version` fails if the package changed without a bump.
  */
-export const PARSER_VERSION = 4;
+export const PARSER_VERSION = 5;

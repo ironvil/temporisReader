@@ -92,6 +92,7 @@ export function parseBackup(text: string): Backup {
 /** Replaces all books, progress, known words and settings with the backup's. Reload the app afterwards. */
 export async function restoreBackup(backup: Backup): Promise<void> {
   await removeDir('books');
+  await removeDir('derived');
   for (const [path, text] of Object.entries(backup.files)) {
     if (!path.startsWith('books/') || path.includes('..')) continue;
     await writeText(path, text);

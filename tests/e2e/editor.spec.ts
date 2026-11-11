@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook, pageIndicator } from './helpers';
+import { chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook, pageIndicator, withStorage } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -213,8 +213,16 @@ test('books stored by older versions are migrated', async ({ page }) => {
     const sourceEntry = await get(`/DATA/books/${book.id}/${book.sources[0].path}`);
     await put({ ...sourceEntry, path: `/DATA/books/${book.id}/source.txt`, folder: `/DATA/books/${book.id}` });
 
-    const indexEntry = await get(`/DATA/books/${book.id}/index.json`);
-    await put({ ...indexEntry, content: JSON.stringify({ ...JSON.parse(indexEntry.content), version: 2 }) });
+    // Before 0.14, content.txt and index.json sat next to the sources (moved to derived/ on load).
+    const del = (key: string) => new Promise((res) => (store().delete(key).onsuccess = res));
+    const indexEntry = await get(`/DATA/derived/${book.id}/index.json`);
+    const contentEntry = await get(`/DATA/derived/${book.id}/content.txt`);
+    const oldPlace = { folder: `/DATA/books/${book.id}` };
+    await put({ ...indexEntry, ...oldPlace, path: `/DATA/books/${book.id}/index.json`, content: JSON.stringify({ ...JSON.parse(indexEntry.content), version: 2 }) });
+    await put({ ...contentEntry, ...oldPlace, path: `/DATA/books/${book.id}/content.txt` });
+    await del(`/DATA/derived/${book.id}/index.json`);
+    await del(`/DATA/derived/${book.id}/content.txt`);
+    await del('/DATA/derived/moved.json');
 
     const { sources, ...legacy } = book;
     delete legacy.progress.source;
@@ -232,6 +240,10 @@ test('books stored by older versions are migrated', async ({ page }) => {
   await page.getByRole('button', { name: 'Library' }).click();
   await page.getByRole('button', { name: 'Edit book' }).click();
   await expect(page.locator('.chapter-details')).toHaveText('2 chapters · book.txt');
+
+  // The rebuildable files were moved out of books/ (which Android backs up) into derived/.
+  const files = await withStorage(page, async (s) => (await s.keys()).filter((k) => /^\/DATA\/(books|derived)\/[^/]+\/[^/]+$/.test(k)).map((k) => k.replace(/\/[^/]+\/([^/]+)$/, '/…/$1')).sort(), null);
+  expect(files).toEqual(['/DATA/books/…/source.txt', '/DATA/books/…/sources', '/DATA/derived/…/content.txt', '/DATA/derived/…/index.json']);
 });
 
 test('a book indexed by an older parser keeps its place when its chapters move', async ({ page }) => {
@@ -258,7 +270,7 @@ test('a book indexed by an older parser keeps its place when its chapters move',
 
     const libraryEntry = await get('/DATA/library.json');
     const [book] = JSON.parse(libraryEntry.content);
-    const indexEntry = await get(`/DATA/books/${book.id}/index.json`);
+    const indexEntry = await get(`/DATA/derived/${book.id}/index.json`);
     const index = JSON.parse(indexEntry.content);
     const [first, second] = index.chapters;
     const old = { ...index, version: index.version - 1, chapters: [{ ...first, end: second.end }] };

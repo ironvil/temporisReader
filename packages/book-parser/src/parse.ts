@@ -22,6 +22,14 @@ export interface ParsedBook {
   headings: number[];
   /** Bold/italic ranges, keyed by paragraph index (only paragraphs that have any). */
   marks: Record<number, InlineMark[]>;
+  /** Paragraphs that open a new scene: a scene break (`---`, `* * *`, <hr>) comes before them. */
+  breaks: number[];
+  /**
+   * Paragraphs of only symbols (`* * *`) left out of the text as scene breaks, which parser
+   * versions before 5 kept: [the paragraph after them, their length]. A reading position saved
+   * against the old text is moved with these (see `oldTextOffset`).
+   */
+  removedBreaks: [paragraph: number, length: number][];
   chapters: Chapter[];
 }
 
@@ -29,6 +37,85 @@ export interface ParsedBook {
 const TXT_CHAPTER_LINE =
   /^(第\s*[0-9０-９零〇一二三四五六七八九十百千万两]+\s*[章回节卷集部篇]|chapter\s+([0-9]+|[ivxlc]+)\b|序章|序言|楔子|引子|尾声|后记|番外)/i;
 const MAX_TXT_HEADING_LENGTH = 40;
+
+/**
+ * A line or paragraph that is only a scene break: three or more of the usual symbols (`* * *`,
+ * `---`, `＊＊＊`, `◇◇◇`, `⁂`), with spaces between them or not.
+ */
+const SCENE_BREAK_SYMBOL = /[*＊×xX·•~～\-－—–―_=＝#＃◇◆○●□■☆★◎※⁂❖✱✲✳✻✽❋]/u;
+export function isSceneBreak(text: string): boolean {
+  const symbols = text.replace(/[\s　]+/g, '');
+  if (!symbols || symbols.length > 40 || ![...symbols].every((c) => SCENE_BREAK_SYMBOL.test(c))) return false;
+  // x and X only as a row of them ("x x x"); ⁂ means a break on its own.
+  if (/^[xX]+$/.test(symbols) && !/\s/.test(text.trim())) return false;
+  return symbols.length >= 3 || symbols.includes('⁂');
+}
+
+/**
+ * Records a scene break before the next paragraph. Breaks at the start, straight after a heading,
+ * before a heading or with nothing after them say nothing, so they're left out.
+ */
+export class SceneBreaks {
+  readonly breaks: number[] = [];
+  readonly removed: [paragraph: number, length: number][] = [];
+  private pending = false;
+  private pendingRemoved: number[] = [];
+  /** At the start, or just after a heading: no scene to end yet. */
+  private atStart = true;
+  mark(): void {
+    if (!this.atStart) this.pending = true;
+  }
+  /** A paragraph of only symbols, left out of the text, marks the break. */
+  markText(length: number): void {
+    this.mark();
+    this.pendingRemoved.push(length);
+  }
+  /** Call as paragraph `index` is added. */
+  paragraph(index: number, heading: boolean): void {
+    if (this.pending && !heading) this.breaks.push(index);
+    this.pending = false;
+    this.atStart = heading;
+    this.takeRemoved(index);
+  }
+  /** Call with the paragraph count once all are added. */
+  finish(count: number): void {
+    this.takeRemoved(count);
+    this.pending = false;
+  }
+  /** Drops what was recorded from paragraph `start` on. */
+  rollBack(start: number): void {
+    while (this.breaks.length && this.breaks.at(-1)! >= start) this.breaks.pop();
+    while (this.removed.length && this.removed.at(-1)![0] >= start) this.removed.pop();
+    this.pendingRemoved = [];
+    this.clear();
+  }
+  /** A new document: a break before its text ends nothing. */
+  clear(): void {
+    this.pending = false;
+    this.atStart = true;
+  }
+  private takeRemoved(index: number): void {
+    for (const length of this.pendingRemoved) this.removed.push([index, length]);
+    this.pendingRemoved = [];
+  }
+}
+
+/**
+ * Where offset `oldOffset` of a book's text as parser version 4 made it (with the `removed`
+ * paragraphs still in) is in the text now. `removed`: [offset in the text now that the paragraph
+ * came just before, its length], in order. An offset inside a removed paragraph goes to the
+ * start of the paragraph after it.
+ */
+export function oldTextOffset(oldOffset: number, removed: [offset: number, length: number][]): number {
+  let shift = 0;
+  for (const [at, length] of removed) {
+    const start = at + shift; // where it began in the old text
+    if (oldOffset < start) break;
+    if (oldOffset < start + length + 1) return at;
+    shift += length + 1; // with its newline
+  }
+  return oldOffset - shift;
+}
 
 const CJK =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]/u;
@@ -56,12 +143,14 @@ export function formatFromFileName(name: string): BookFormat | null {
 
 export function parseBook(raw: string, format: BookFormat, fallbackTitle: string): ParsedBook {
   const text = raw.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const { paragraphs, headings, title, marks } = format === 'md' ? parseMarkdown(text) : parseTxt(text);
+  const { paragraphs, headings, title, marks, breaks, removedBreaks } = format === 'md' ? parseMarkdown(text) : parseTxt(text);
   return {
     title,
     paragraphs,
     headings,
     marks,
+    breaks,
+    removedBreaks,
     chapters: buildChapters(paragraphs, headings, title ?? fallbackTitle),
   };
 }
@@ -71,6 +160,8 @@ interface Blocks {
   headings: number[];
   title: string | null;
   marks: Record<number, InlineMark[]>;
+  breaks: number[];
+  removedBreaks: [number, number][];
 }
 
 /** Joins hard-wrapped lines: no space between CJK text, a single space otherwise. */
@@ -96,11 +187,19 @@ function parseTxt(text: string): Blocks {
     ? nonEmpty.flatMap((b) => (b.length === 1 || !isTxtHeading(b[0]) ? [joinLines(b)] : [b[0], joinLines(b.slice(1))]))
     : nonEmpty.flat();
 
+  const scenes = new SceneBreaks();
   for (const unit of units) {
-    if (isTxtHeading(unit)) headings.push(paragraphs.length);
+    if (isSceneBreak(unit)) {
+      scenes.markText(unit.length);
+      continue;
+    }
+    const heading = isTxtHeading(unit);
+    if (heading) headings.push(paragraphs.length);
+    scenes.paragraph(paragraphs.length, heading);
     paragraphs.push(unit);
   }
-  return { paragraphs, headings, title: null, marks: {} };
+  scenes.finish(paragraphs.length);
+  return { paragraphs, headings, title: null, marks: {}, breaks: scenes.breaks, removedBreaks: scenes.removed };
 }
 
 const SENTENCE_END = /[。！？!?.…”」』"'）)：:；;]$/;
@@ -238,9 +337,11 @@ function parseMarkdown(text: string): Blocks {
   let buffer: string[] = [];
   let inFence = false;
 
+  const scenes = new SceneBreaks();
   const push = (s: string, heading = false) => {
     const inline = parseInlineMarkdown(s);
     if (!inline.text) return;
+    scenes.paragraph(paragraphs.length, heading);
     if (heading) headings.push(paragraphs.length);
     else if (inline.marks.length) marks[paragraphs.length] = inline.marks;
     paragraphs.push(inline.text);
@@ -250,7 +351,8 @@ function parseMarkdown(text: string): Blocks {
     buffer = [];
   };
 
-  for (const rawLine of text.split('\n')) {
+  const lines = text.split('\n');
+  for (const [i, rawLine] of lines.entries()) {
     let line = rawLine.trim();
 
     if (/^(```|~~~)/.test(line)) {
@@ -259,7 +361,10 @@ function parseMarkdown(text: string): Blocks {
       continue;
     }
     if (inFence) {
-      if (line) paragraphs.push(line);
+      if (line) {
+        scenes.paragraph(paragraphs.length, false);
+        paragraphs.push(line);
+      }
       continue;
     }
     if (!line) {
@@ -282,9 +387,15 @@ function parseMarkdown(text: string): Blocks {
       push(headingText, true);
       continue;
     }
-    // Thematic break.
+    // Thematic break: a new scene.
     if (/^([-*_]\s*){3,}$/.test(line)) {
       flush();
+      scenes.mark();
+      continue;
+    }
+    // So is a paragraph of only other symbols (`＊＊＊`, `◇◇◇`), which used to be text.
+    if (!buffer.length && !lines[i + 1]?.trim() && isSceneBreak(line)) {
+      scenes.markText(stripInlineMarkdown(line).length);
       continue;
     }
 
@@ -297,7 +408,8 @@ function parseMarkdown(text: string): Blocks {
     if (line) buffer.push(line);
   }
   flush();
-  return { paragraphs, headings, title, marks };
+  scenes.finish(paragraphs.length);
+  return { paragraphs, headings, title, marks, breaks: scenes.breaks, removedBreaks: scenes.removed };
 }
 
 /**
