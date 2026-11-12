@@ -1,4 +1,11 @@
+# LF in the repo and in every checkout, whatever core.autocrlf is set to on the machine.
+* text=auto eol=lf
+
 # Keep the Gradle wrappers runnable whichever OS checks them out.
 gradlew text eol=lf
 *.bat text eol=crlf
+
 *.epub binary
+*.png binary
+*.jar binary
+*.jks binary
