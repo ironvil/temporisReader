@@ -294,6 +294,13 @@ export async function importBook(page: Page, name: string, content: string): Pro
   await expect(page.getByText(/^Imported/)).toBeVisible();
 }
 
+/** Library → a book's ⋮ menu → Edit, Export or Delete (`nth` picks among books with the same title). */
+export async function bookAction(page: Page, title: string | RegExp, action: 'Edit' | 'Export' | 'Delete', nth = 0): Promise<void> {
+  const name = typeof title === 'string' ? `Options for ${title}` : new RegExp(`^Options for ${title.source.replace(/^\^/, '')}`);
+  await page.getByRole('button', { name, exact: typeof title === 'string' }).nth(nth).click();
+  await page.getByRole('menuitem', { name: action, exact: true }).click();
+}
+
 export async function openFirstBook(page: Page): Promise<void> {
   await page.locator('.book-open').first().click();
   await expect(page.locator('.page-count')).toHaveText(/^\d+ \/ \d+$/);

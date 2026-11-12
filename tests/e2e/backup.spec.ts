@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { devices, expect, test, type Browser, type Page } from '@playwright/test';
-import { addChinese, chineseBook, closeSettings, dismissLanguageReminder, importBook, nextPage, openFirstBook, openLanguageSettings } from './helpers';
+import { addChinese, bookAction, chineseBook, closeSettings, dismissLanguageReminder, importBook, nextPage, openFirstBook, openLanguageSettings } from './helpers';
 
 async function freshPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...devices['Pixel 7'], baseURL: test.info().project.use.baseURL });
@@ -118,7 +118,7 @@ test('back up a library and restore it on a fresh install', async ({ page, brows
   await fresh.getByRole('button', { name: 'Library' }).click();
 
   // Composed book: chapter order, titles and markdown survived.
-  await fresh.getByRole('button', { name: 'Edit 短篇' }).click();
+  await bookAction(fresh, '短篇', 'Edit');
   await expect
     .poll(() => fresh.locator('.chapter-row .chapter-main input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)))
     .toEqual(['乙章', '甲章']);

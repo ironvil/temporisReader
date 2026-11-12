@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook, pageIndicator, withStorage } from './helpers';
+import { bookAction, chineseBook, dismissLanguageReminder, importBook, nextPage, openFirstBook, pageIndicator, withStorage } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -122,7 +122,7 @@ test('reading position follows its chapter when chapters are reordered', async (
   expect(before.page).toBe(2);
 
   await page.getByRole('button', { name: 'Library' }).click();
-  await page.getByRole('button', { name: 'Edit Book' }).click();
+  await bookAction(page, 'Book', 'Edit');
   await page.getByRole('button', { name: 'Move Two up' }).click();
   await expectChapters(page, ['Two', 'One']);
   await read(page);
@@ -142,7 +142,7 @@ test('deleting the chapter being read moves to the chapter in its place', async 
   await expect(page.locator('.chapter-title')).toHaveText('B');
 
   await page.getByRole('button', { name: 'Library' }).click();
-  await page.getByRole('button', { name: 'Edit Book' }).click();
+  await bookAction(page, 'Book', 'Edit');
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Delete B', exact: true }).click();
   await expectChapters(page, ['A', 'C']);
@@ -152,7 +152,7 @@ test('deleting the chapter being read moves to the chapter in its place', async 
 
 test('imported books can be extended with chapters', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
-  await page.getByRole('button', { name: 'Edit book' }).click();
+  await bookAction(page, 'book', 'Edit');
   await expectChapters(page, ['book']);
   await expect(page.locator('.chapter-details')).toHaveText('2 chapters · book.txt');
 
@@ -238,7 +238,7 @@ test('books stored by older versions are migrated', async ({ page }) => {
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
 
   await page.getByRole('button', { name: 'Library' }).click();
-  await page.getByRole('button', { name: 'Edit book' }).click();
+  await bookAction(page, 'book', 'Edit');
   await expect(page.locator('.chapter-details')).toHaveText('2 chapters · book.txt');
 
   // The rebuildable files were moved out of books/ (which Android backs up) into derived/.
@@ -339,7 +339,7 @@ test('the add-chapter format remembers the last choice, across restarts', async 
 
   await page.reload();
   await expect(page.locator('body[data-ready]')).toBeAttached();
-  await page.getByRole('button', { name: 'Edit Book' }).click();
+  await bookAction(page, 'Book', 'Edit');
   await page.getByRole('button', { name: 'Add chapter' }).click();
   await expect(page.getByRole('dialog', { name: 'Add chapter' }).getByLabel('Format')).toHaveValue('md');
   await page.getByRole('dialog', { name: 'Add chapter' }).getByLabel('Format').selectOption('txt');

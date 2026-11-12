@@ -1,6 +1,6 @@
 /** Book language (one per book, editable) and the reminders shown when a book is opened. */
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, chineseBook, importBook, tapText } from './helpers';
+import { addChinese, bookAction, chineseBook, importBook, tapText } from './helpers';
 
 const addReminder = (page: Page) => page.getByRole('dialog', { name: 'Add Chinese?' });
 const unsupportedNotice = (page: Page) => page.getByRole('dialog', { name: 'Lookups aren’t available' });
@@ -73,7 +73,7 @@ test('the language can be changed in the editor and is kept when chapters are ad
   await importBook(page, 'owl.txt', chineseBook());
   await expect(page.locator('.book-details')).toHaveText('Not started · 2 chapters · Chinese');
 
-  await page.getByRole('button', { name: 'Edit owl' }).click();
+  await bookAction(page, 'owl', 'Edit');
   const language = page.getByRole('dialog', { name: 'Edit book' }).getByLabel('Language');
   await expect(language).toHaveValue('zh');
   await expect(language.locator('option')).toHaveText(['Chinese · 中文', 'French · Français', 'German · Deutsch', 'Japanese · 日本語', 'Other (not supported)']);
@@ -97,7 +97,7 @@ test('the language can be changed in the editor and is kept when chapters are ad
 
   // Back to Chinese: lookups work again.
   await page.getByRole('button', { name: 'Library' }).click();
-  await page.getByRole('button', { name: 'Edit owl' }).click();
+  await bookAction(page, 'owl', 'Edit');
   await page.getByRole('dialog', { name: 'Edit book' }).getByLabel('Language').selectOption('zh');
   await page.getByRole('button', { name: 'Close editor' }).click();
   await expect(page.locator('.book-details')).toHaveText(/ · 3 chapters · Chinese$/); // opened once: shows progress now
@@ -109,7 +109,7 @@ test('the language can be changed in the editor and is kept when chapters are ad
 
 test('setting the language of an unsupported book to Chinese leads to the add reminder', async ({ page }) => {
   await importBook(page, 'mixed.txt', 'Hello there. Mostly English text with 一点 Chinese.');
-  await page.getByRole('button', { name: 'Edit mixed' }).click();
+  await bookAction(page, 'mixed', 'Edit');
   await page.getByRole('dialog', { name: 'Edit book' }).getByLabel('Language').selectOption('zh');
   await page.getByRole('button', { name: 'Close editor' }).click();
   await openBook(page, 'mixed');

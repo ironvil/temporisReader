@@ -3,7 +3,7 @@
  * Fixture dictionary words in these books: 今天 早上 阳光 镜子.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addChinese, closeSettings, importBook, nextPage, openFirstBook, openLanguageSettings, tapText } from './helpers';
+import { addChinese, bookAction, closeSettings, importBook, nextPage, openFirstBook, openLanguageSettings, tapText } from './helpers';
 
 const MULTI_PAGE = ['第一章', ...Array.from({ length: 40 }, () => '今天早上，阳光很好。')].join('\n');
 // Chapter 1: 今天 ×2, 阳光 ×1 (3 occurrences). Chapter 2: 镜子 ×1.
@@ -115,7 +115,7 @@ test.describe('known-word percentage', () => {
     await start(page, { known: { 今天: [3, '2026-01-01'] } });
     await importBook(page, 'two.md', TWO_CHAPTERS);
     await expect(page.locator('.book-known')).toHaveText('50% of words known');
-    await page.getByRole('button', { name: 'Edit 一' }).click();
+    await bookAction(page, '一', 'Edit');
     await page.getByRole('button', { name: 'Add chapter' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add chapter' });
     await dialog.getByLabel('Chapter text').fill('今天今天今天今天。');

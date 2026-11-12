@@ -5,7 +5,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { dismissLanguageReminder, importBook, nextPage, settled } from './helpers';
+import { bookAction, dismissLanguageReminder, importBook, nextPage, settled } from './helpers';
 
 /** Numbered one-line paragraphs, so where the reader is can be told from the text. */
 const chapterText = (c: number, n: number) => Array.from({ length: n }, (_, p) => `〔${c}-${p + 1}〕今天早上，阳光从高高的窗户里斜斜地照进来，落在桌子上。`).join('\n');
@@ -36,13 +36,14 @@ async function createBook(page: Page, title: string, chapters: [string, string][
     await dialog.getByRole('button', { name: 'Add' }).click();
     await expect(dialog).toBeHidden();
   }
+  await page.getByRole('button', { name: 'Close editor' }).click();
 }
 
-/** Editor → Share → the chosen format; returns the downloaded file's name and bytes. */
-async function share(page: Page, format: 'Temporis book' | 'EPUB'): Promise<{ name: string; bytes: Buffer }> {
-  await page.getByRole('button', { name: 'Share book' }).click();
+/** Library → the book's ⋮ menu → Export → the chosen format; returns the downloaded file's name and bytes. */
+async function share(page: Page, title: string, format: 'Temporis book' | 'EPUB', nth = 0): Promise<{ name: string; bytes: Buffer }> {
+  await bookAction(page, title, 'Export', nth);
   const pending = page.waitForEvent('download');
-  await page.getByRole('dialog', { name: 'Share book' }).getByRole('button', { name: format }).click();
+  await page.getByRole('dialog', { name: 'Export book' }).getByRole('button', { name: format }).click();
   const download = await pending;
   return { name: download.suggestedFilename(), bytes: await readFile((await download.path())!) };
 }
@@ -74,7 +75,7 @@ test('a created book is shared and imported on another phone with the same id', 
     ['第一章', chapterText(1, 3)],
     ['第二章', chapterText(2, 3)],
   ]);
-  const file = await share(page, 'Temporis book');
+  const file = await share(page, '分享的书', 'Temporis book');
   expect(file.name).toBe('分享的书.temporis.json');
   const shared = JSON.parse(file.bytes.toString('utf8'));
   expect(shared).toMatchObject({ app: 'temporis-reader', kind: 'book', version: 1, title: '分享的书', language: 'zh' });
@@ -87,12 +88,15 @@ test('a created book is shared and imported on another phone with the same id', 
   expect(JSON.stringify(shared)).not.toContain('progress');
 
   const other = await otherPhone(browser);
-  await importFile(other, file.name, file.bytes);
+  // Through the library's "Import a shared book" menu item.
+  const chooser = other.waitForEvent('filechooser');
+  await other.getByRole('button', { name: 'Add book' }).click();
+  await other.getByRole('menuitem', { name: 'Import a shared book' }).click();
+  await (await chooser).setFiles({ name: file.name, mimeType: 'application/json', buffer: file.bytes });
   await expect(other.getByText('Imported “分享的书”')).toBeVisible();
   await expect(book(other, '分享的书').locator('.book-details')).toHaveText('Not started · 2 chapters · Chinese');
   // It's an editable book there too, with the same id.
-  await book(other, '分享的书').getByRole('button', { name: 'Edit 分享的书' }).click();
-  expect(JSON.parse((await share(other, 'Temporis book')).bytes.toString('utf8')).id).toBe(shared.id);
+  expect(JSON.parse((await share(other, '分享的书', 'Temporis book')).bytes.toString('utf8')).id).toBe(shared.id);
 });
 
 test('importing the same book again: unchanged is ignored, a new version replaces it and keeps the place', async ({ page }) => {
@@ -101,10 +105,10 @@ test('importing the same book again: unchanged is ignored, a new version replace
     ['第一章', chapterText(1, 40)],
     ['第二章', chapterText(2, 60)],
   ]);
-  const original = await share(page, 'Temporis book');
+  const original = await share(page, '长书', 'Temporis book');
 
   // Read into chapter 2.
-  await page.getByRole('button', { name: 'Read' }).click();
+  await book(page, '长书').locator('.book-open').click();
   await dismissLanguageReminder(page);
   let shown: string[] = [];
   for (let i = 0; i < 30 && !shown.some((p) => p.startsWith('2-') && Number(p.slice(2)) > 20); i++) {
@@ -149,24 +153,21 @@ test('importing the same book again: unchanged is ignored, a new version replace
 test('keeping both adds the new version as a separate book', async ({ page }) => {
   await start(page);
   await createBook(page, '两本', [['第一章', chapterText(1, 3)]]);
-  const shared = JSON.parse((await share(page, 'Temporis book')).bytes.toString('utf8'));
-  await page.getByRole('button', { name: 'Close editor' }).click();
+  const shared = JSON.parse((await share(page, '两本', 'Temporis book')).bytes.toString('utf8'));
   shared.chapters[0].text += '\n新的一段。';
   await importFile(page, '两本.temporis.json', JSON.stringify(shared));
   await page.getByRole('dialog', { name: 'Replace this book?' }).getByRole('button', { name: 'Keep both' }).click();
   await expect(page.getByText('Imported “两本” as a separate book')).toBeVisible();
   await expect(page.locator('.book', { hasText: '两本' })).toHaveCount(2);
   // The copy has its own id: sharing it and importing it again is a new book, not a replace.
-  await page.locator('.book').first().getByRole('button', { name: 'Edit 两本' }).click();
-  const copy = JSON.parse((await share(page, 'Temporis book')).bytes.toString('utf8'));
+  const copy = JSON.parse((await share(page, '两本', 'Temporis book', 0)).bytes.toString('utf8'));
   expect(copy.id).not.toBe(shared.id);
 });
 
 test('cancelling leaves the library as it was', async ({ page }) => {
   await start(page);
   await createBook(page, '不变', [['第一章', chapterText(1, 3)]]);
-  const shared = JSON.parse((await share(page, 'Temporis book')).bytes.toString('utf8'));
-  await page.getByRole('button', { name: 'Close editor' }).click();
+  const shared = JSON.parse((await share(page, '不变', 'Temporis book')).bytes.toString('utf8'));
   shared.title = '变了';
   await importFile(page, 'x.temporis.json', JSON.stringify(shared));
   await page.getByRole('dialog', { name: 'Replace this book?' }).getByRole('button', { name: 'Cancel' }).click();
@@ -179,7 +180,7 @@ test('shared as an EPUB, it opens in any reader (here, as an EPUB)', async ({ pa
     ['第一章', chapterText(1, 3)],
     ['第二章', chapterText(2, 3)],
   ]);
-  const epub = await share(page, 'EPUB');
+  const epub = await share(page, 'EPUB 书', 'EPUB');
   expect(epub.name).toBe('EPUB 书.epub');
   expect(epub.bytes.subarray(30, 38).toString()).toBe('mimetype');
 
@@ -189,12 +190,12 @@ test('shared as an EPUB, it opens in any reader (here, as an EPUB)', async ({ pa
   await expect(book(other, 'EPUB 书').locator('.book-details')).toHaveText('Not started · 2 chapters · Chinese');
 });
 
-test('only books made with Create a book have Share', async ({ page }) => {
+test('only books made with Create a book have Export', async ({ page }) => {
   await start(page);
   await importBook(page, 'whole.txt', `第一章\n${chapterText(1, 3)}\n第二章\n${chapterText(2, 3)}`);
-  await book(page, 'whole').getByRole('button', { name: 'Edit whole' }).click();
-  await expect(page.getByRole('dialog', { name: 'Edit book' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Share book' })).toBeHidden();
+  await page.getByRole('button', { name: 'Options for whole' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Export' })).toHaveCount(0);
 });
 
 test('a file that isn’t a shared book is refused with a reason', async ({ page }) => {

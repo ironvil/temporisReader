@@ -744,6 +744,10 @@ progress {
   border-radius: 12px;
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
 }
+.menu.up {
+  top: auto;
+  bottom: 100%;
+}
 .menu-item {
   display: block;
   width: 100%;

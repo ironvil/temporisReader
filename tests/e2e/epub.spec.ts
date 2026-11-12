@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { assembleBook, parseEpub, PARSER_VERSION } from '@temporis/book-parser';
-import { dismissLanguageReminder, nextPage, withStorage } from './helpers';
+import { bookAction, dismissLanguageReminder, nextPage, withStorage } from './helpers';
 
 const MONTE_CRISTO = 'pg17989-images-3.epub';
 const FAUST = 'pg2229-images-3.epub';
@@ -350,7 +350,7 @@ test('deleting a book lets go of its file; broken EPUBs are refused', async ({ p
   await expect(page.getByText(/^Imported/)).toBeVisible();
   expect(await deviceFiles(page)).toHaveLength(1);
   page.once('dialog', (d) => void d.accept());
-  await page.getByRole('button', { name: /^Delete Faust/ }).click();
+  await bookAction(page, /^Faust/, 'Delete');
   await expect(page.locator('.book')).toHaveCount(0);
   await expect.poll(() => deviceFiles(page)).toHaveLength(0);
 

@@ -5,6 +5,7 @@ import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
 import { knownWords } from '../vocab/known-words';
 import { field, openDialog } from './dialog';
 import { el, toast } from './dom';
+import { canExport, exportBook } from './export-book';
 import { icon, iconButton } from './icons';
 
 export interface LibraryCallbacks {
@@ -19,6 +20,8 @@ export class LibraryView {
   private readonly fileInput: HTMLInputElement;
   private readonly menu: HTMLElement;
   private readonly addButton: HTMLButtonElement;
+  /** The open menu (the add menu or a book's ⋮ menu) and the button that opened it. */
+  private openMenu: { menu: HTMLElement; button: HTMLButtonElement } | null = null;
 
   constructor(private readonly callbacks: LibraryCallbacks) {
     // No `accept` filter: Android's picker greys out .md files because they have no reliable MIME type.
@@ -29,13 +32,17 @@ export class LibraryView {
       'div',
       { class: 'menu', role: 'menu', hidden: true },
       this.menuItem('Import a file', () => this.chooseFile()),
+      // Same picker and import as "Import a file" (it recognises shared books itself); listed
+      // separately so a .temporis.json from someone else has an obvious way in.
+      this.menuItem('Import a shared book', () => this.chooseFile()),
       this.menuItem('Create a book', () => this.createBook()),
     );
-    this.addButton = iconButton('plus', 'Add book', () => this.toggleMenu());
+    this.addButton = iconButton('plus', 'Add book', () => this.toggleMenu(this.menu, this.addButton));
     this.addButton.setAttribute('aria-haspopup', 'menu');
     document.addEventListener('pointerdown', (e) => {
       const target = e.target as Node;
-      if (!this.menu.hidden && !this.menu.contains(target) && !this.addButton.contains(target)) this.toggleMenu(false);
+      const open = this.openMenu;
+      if (open && !open.menu.contains(target) && !open.button.contains(target)) this.closeMenu();
     });
 
     this.list = el('ul', { class: 'book-list' });
@@ -78,15 +85,30 @@ export class LibraryView {
   private menuItem(label: string, onClick: () => void): HTMLButtonElement {
     const item = el('button', { type: 'button', role: 'menuitem', class: 'menu-item' }, label);
     item.addEventListener('click', () => {
-      this.toggleMenu(false);
+      this.closeMenu();
       onClick();
     });
     return item;
   }
 
-  private toggleMenu(open = this.menu.hidden): void {
-    this.menu.hidden = !open;
-    this.addButton.setAttribute('aria-expanded', String(open));
+  private toggleMenu(menu: HTMLElement, button: HTMLButtonElement): void {
+    const wasOpen = this.openMenu?.menu === menu;
+    this.closeMenu();
+    if (wasOpen) return;
+    menu.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    this.openMenu = { menu, button };
+    // Near the bottom of the list, open upwards so the menu isn't cut off.
+    const room = this.root.querySelector('.library-content')!.getBoundingClientRect().bottom;
+    menu.classList.toggle('up', menu.getBoundingClientRect().bottom > room);
+  }
+
+  private closeMenu(): void {
+    if (!this.openMenu) return;
+    this.openMenu.menu.hidden = true;
+    this.openMenu.menu.classList.remove('up');
+    this.openMenu.button.setAttribute('aria-expanded', 'false');
+    this.openMenu = null;
   }
 
   private createBook(): void {
@@ -129,14 +151,22 @@ export class LibraryView {
     );
     open.addEventListener('click', () => (book.chapterCount ? this.callbacks.onOpen(book.id) : this.callbacks.onEdit(book.id)));
 
-    const edit = iconButton('edit', `Edit ${book.title}`, () => this.callbacks.onEdit(book.id));
-    const remove = iconButton('trash', `Delete ${book.title}`, async () => {
+    const remove = async () => {
       const linked = book.sources.some((s) => s.file);
       if (!confirm(`Delete “${book.title}” and its reading progress?${linked ? ' The EPUB file itself is not deleted.' : ''}`)) return;
       await deleteBook(book.id);
       await this.refresh();
-    });
-    return el('li', { class: 'book' }, open, edit, remove);
+    };
+    const menu = el(
+      'div',
+      { class: 'menu', role: 'menu', hidden: true, 'aria-label': book.title },
+      this.menuItem('Edit', () => this.callbacks.onEdit(book.id)),
+      canExport(book) && this.menuItem('Export', () => exportBook(book.id)),
+      this.menuItem('Delete', () => void remove()),
+    );
+    const more: HTMLButtonElement = iconButton('more', `Options for ${book.title}`, () => this.toggleMenu(menu, more));
+    more.setAttribute('aria-haspopup', 'menu');
+    return el('li', { class: 'book' }, open, el('div', { class: 'menu-anchor' }, more, menu));
   }
 
   /** Fills in "N% of words known" per book once dictionaries and known words are loaded. */

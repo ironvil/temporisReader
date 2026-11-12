@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { chineseBook, importBook, nextPage, openFirstBook, pageIndicator, settled, swipe, withStorage } from './helpers';
+import { bookAction, chineseBook, importBook, nextPage, openFirstBook, pageIndicator, settled, swipe, withStorage } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -258,6 +258,6 @@ test('changing text size re-paginates and keeps the place', async ({ page }) => 
 test('deletes a book', async ({ page }) => {
   await importBook(page, 'book.txt', chineseBook());
   page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Delete book' }).click();
+  await bookAction(page, 'book', 'Delete');
   await expect(page.getByText('No books yet')).toBeVisible();
 });

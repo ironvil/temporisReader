@@ -74,25 +74,24 @@ test('a created book is shared through the share sheet, and the file imports bac
   const SHARED = ['tt1.temporis.json', 'tt2.temporis.json'];
   const { page } = app;
   await createBook(page, 'Share test', '猫头鹰在晚上飞。\n它看见了月亮。');
-  await page.getByRole('button', { name: 'Edit Share test' }).click();
   // Both formats are written for the share sheet, which is then closed without sending.
   for (const [format, file] of [
     ['Temporis book', 'Share test.temporis.json'],
     ['EPUB', 'Share test.epub'],
   ]) {
-    await page.getByRole('button', { name: 'Share book' }).click();
-    await page.getByRole('dialog', { name: 'Share book' }).getByRole('button', { name: format }).click();
+    await page.getByRole('button', { name: 'Options for Share test' }).click();
+    await page.getByRole('menuitem', { name: 'Export' }).click();
+    await page.getByRole('dialog', { name: 'Export book' }).getByRole('button', { name: format }).click();
     await expect.poll(() => app.asApp(`find cache/exports -type f`)).toContain(`cache/exports/${file}`);
     // The file is written before the share sheet shows: wait for the sheet, then close it.
     const focus = () => app.shell('dumpsys window | grep mCurrentFocus');
     await expect.poll(focus).not.toContain(PKG);
     await app.shell('input keyevent 4');
     await expect.poll(focus).toContain(PKG);
-    await expect(page.getByRole('dialog', { name: 'Share book' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: 'Export book' })).toBeHidden();
     if (format === 'EPUB') expect(await app.asApp(`head -c 2 "cache/exports/${file}"`)).toBe('PK');
   }
   const shared = JSON.parse(await app.asApp('cat "cache/exports/Share test.temporis.json"'));
-  await page.getByRole('button', { name: 'Close editor' }).click();
   expect(shared).toMatchObject({ app: 'temporis-reader', kind: 'book', title: 'Share test' });
 
   // The same file, picked: already there. A new version: replace it.
