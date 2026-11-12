@@ -118,8 +118,10 @@ and the system UI with Playwright's Android support, and shuts the emulator down
 minute; `-- --if-affected` skips the run unless Android-related files changed since `main`, and
 `-- --no-build` reuses the last APK. Real phones are never used (the tests uninstall the app).
 
-One-off setup: `sdkmanager "emulator" "system-images;android-36.1;google_apis;x86_64"`, plus
-hardware acceleration (KVM on Linux). Playwright's Android driver is installed by the script.
+One-off setup: `sdkmanager "emulator" "system-images;android-36.1;google_apis;x86_64"` (on Windows
+`android-36` instead: 36.1's display server keeps crashing there), plus hardware acceleration (KVM
+on Linux; on Windows, SVM/VT-x in the firmware and the Windows Hypervisor Platform feature).
+Playwright's Android driver is installed by the script.
 
 ## Parser version
 

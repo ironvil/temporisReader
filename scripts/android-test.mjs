@@ -16,7 +16,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const windows = process.platform === 'win32';
 const AVD = 'temporis-test';
-const IMAGE = 'system-images;android-36.1;google_apis;x86_64';
+// On Windows the 36.1 image's SurfaceFlinger aborts every few seconds (goldfish mapper assertion
+// `!hasReadColorBufferDma`, with every -gpu mode and emulator 37.2/37.3), taking the system down; 36 is stable.
+const IMAGE = `system-images;android-${windows ? '36' : '36.1'};google_apis;x86_64`;
 const APK = join(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
 
 /** Paths whose changes can break what the Android tests cover. Keep in step with CLAUDE.md. */
