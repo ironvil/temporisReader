@@ -1,6 +1,6 @@
 {
   "name": "temporis-reader",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Capacitor hello world with file reading",
   "scripts": {
     "dev": "vite",
