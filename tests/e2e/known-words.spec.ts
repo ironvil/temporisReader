@@ -155,7 +155,7 @@ test.describe('import with "replace" ticked', () => {
 
     await closeSettings(page);
     await tapText(page, '头发');
-    await expect(pressed(page)).toHaveCount(0);
+    await expect(pressed(page)).toHaveText('1'); // not in the list any more: the lookup starts it at 1 (a kept ✓ would be 2)
     await tapText(page, '今天');
     await expect(pressed(page)).toHaveText('2');
   });
