@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const android = join(dirname(fileURLToPath(import.meta.url)), '..', 'android');
 const windows = process.platform === 'win32';
-const result = spawnSync(windows ? 'gradlew.bat' : './gradlew', process.argv.slice(2), {
+// The full path: cmd.exe doesn't look in the current folder when NoDefaultCurrentDirectoryInExePath is set.
+const result = spawnSync(windows ? `"${join(android, 'gradlew.bat')}"` : './gradlew', process.argv.slice(2), {
   cwd: android,
   stdio: 'inherit',
   shell: windows, // .bat files can only be started through a shell
