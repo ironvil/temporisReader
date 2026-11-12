@@ -23,7 +23,7 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$PATH
   - anything under `android/` (manifest, plugins, backup rules, Gradle), `capacitor.config.json`,
     or Capacitor dependencies in package.json;
   - TypeScript that calls the native plugins or decides what's stored on disk:
-    `src/books/linked-files.ts`, `src/auto-backup.ts`, `src/backup.ts`, `src/storage.ts`, and file
+    `src/books/linked-files.ts`, `src/auto-backup.ts`, `src/backup.ts`, `src/storage.ts`, `src/export.ts` (the share sheet), and file
     paths in `src/books/library.ts` or elsewhere (they decide what Android's backup includes);
   - the Android tests and their runner.
 
@@ -33,7 +33,7 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$PATH
   phone: only emulators are used, because the tests uninstall the app.
 
   The tests cover what the web build can only fake: the system file and folder pickers with their
-  persisted grants (LinkedFilesPlugin, BackupFolderPlugin) and Android's Auto Backup rules. Add to
+  persisted grants (LinkedFilesPlugin, BackupFolderPlugin), the share sheet and Android's Auto Backup rules. Add to
   them only for native behaviour; keep them few, as each one costs seconds of emulator time.
 
 ## Releases

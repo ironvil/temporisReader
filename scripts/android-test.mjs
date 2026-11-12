@@ -31,6 +31,7 @@ const AFFECTS = [
   /^src\/auto-backup\.ts$/,
   /^src\/backup\.ts$/,
   /^src\/storage\.ts$/,
+  /^src\/export\.ts$/,
 ];
 
 const args = process.argv.slice(2);

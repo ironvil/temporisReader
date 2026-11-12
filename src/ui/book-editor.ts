@@ -2,7 +2,10 @@ import {
   addChapter,
   countChapters,
   getBook,
+  isEditorBook,
+  loadBook,
   moveChapter,
+  sharedBookOf,
   readFileText,
   removeChapter,
   renameBook,
@@ -14,6 +17,9 @@ import {
 } from '../books/library';
 import { formatFromFileName, type BookFormat } from '@temporis/book-parser';
 import { getLanguage, languages } from '../languages';
+import { buildEpub } from '../books/epub-export';
+import { SHARE_EXTENSION, shareFileName } from '../books/share';
+import { exportFile } from '../export';
 import { getSettings, updateSettings } from '../settings';
 import { field, openDialog } from './dialog';
 import { el, toast } from './dom';
@@ -29,12 +35,14 @@ export class BookEditorView {
   readonly root: HTMLElement;
   private readonly content: HTMLElement;
   private readonly readButton: HTMLButtonElement;
+  private readonly shareButton: HTMLButtonElement;
   private bookId: string | null = null;
 
   constructor(callbacks: BookEditorCallbacks) {
     this.content = el('main', { class: 'editor-content' });
     this.readButton = el('button', { type: 'button', class: 'text-btn' }, 'Read');
     this.readButton.addEventListener('click', () => this.bookId && callbacks.onRead(this.bookId));
+    this.shareButton = iconButton('share', 'Share book', () => this.bookId && this.share(this.bookId));
     this.root = el(
       'section',
       { class: 'view editor', hidden: true, role: 'dialog', 'aria-label': 'Edit book' },
@@ -43,6 +51,7 @@ export class BookEditorView {
         { class: 'bar top' },
         iconButton('back', 'Close editor', () => callbacks.onClose()),
         el('h1', { class: 'bar-heading' }, 'Edit book'),
+        this.shareButton,
         this.readButton,
       ),
       this.content,
@@ -65,10 +74,41 @@ export class BookEditorView {
     this.content.replaceChildren();
   }
 
+  /** Share as a Temporis book (editable, re-importable: same id) or as an EPUB for other readers. */
+  private share(bookId: string): void {
+    const send = (epub: boolean) => sendBook(epub).catch((err) => {
+      // Closing the share sheet without choosing an app isn't an error.
+      if (!/cancel/i.test(err instanceof Error ? err.message : String(err))) throw err;
+    });
+    const sendBook = async (epub: boolean) => {
+      if (epub) {
+        const book = await loadBook(bookId);
+        const modified = new Date(book.meta.modifiedAt ?? book.meta.addedAt);
+        const bytes = buildEpub({ id: book.meta.id, title: book.meta.title, language: book.meta.language, modified, content: book.content, index: book.index });
+        await exportFile(shareFileName(book.meta.title, '.epub'), bytes, 'application/epub+zip', 'Share');
+      } else {
+        const shared = await sharedBookOf(bookId);
+        await exportFile(shareFileName(shared.title, SHARE_EXTENSION), JSON.stringify(shared, null, 2), 'application/json', 'Share');
+      }
+    };
+    openDialog({
+      title: 'Share book',
+      content: [
+        el('p', {}, el('strong', {}, 'Temporis book'), ': for Temporis Reader. Chapters stay editable, and sharing a newer version later lets the other person replace theirs, keeping their place.'),
+        el('p', {}, el('strong', {}, 'EPUB'), ': for other e-reader apps.'),
+      ],
+      confirmLabel: 'Temporis book',
+      onConfirm: () => send(false),
+      alternative: { label: 'EPUB', onClick: () => send(true) },
+    });
+  }
+
   private async render(): Promise<void> {
     if (!this.bookId) return;
     const book = await getBook(this.bookId);
     this.readButton.hidden = !book.chapterCount;
+    // Only books made here can be shared (a whole imported file or an EPUB is shared as that file).
+    this.shareButton.hidden = !book.chapterCount || !isEditorBook(book);
 
     const title = el('input', { type: 'text', value: book.title, autocomplete: 'off', class: 'title-input' });
     title.addEventListener('change', () => this.run(() => renameBook(book.id, title.value)));

@@ -131,7 +131,7 @@ test('single-chapter books hide the chapter number', async ({ page }) => {
 
 test('rejects unsupported files', async ({ page }) => {
   await page.getByTestId('import-input').setInputFiles({ name: 'book.pdf', mimeType: 'application/pdf', buffer: Buffer.from('x') });
-  await expect(page.getByText('Only .epub, .txt and .md files are supported')).toBeVisible();
+  await expect(page.getByText('Only .epub, .txt, .md and shared Temporis books (.temporis.json) are supported')).toBeVisible();
 });
 
 test('paginates, turns pages by swipe and keyboard, and crosses chapters', async ({ page }) => {

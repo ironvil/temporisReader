@@ -7,6 +7,10 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Big EPUBs open at the saved chapter straight away. After a full parse, `derived/<id>/layout.json` keeps the book's shape without its text: chapters, headings, character offsets, and which paragraphs of which spine documents were kept. All EPUB parsing runs in a Web Worker (`src/books/parse-worker.ts`); the file's bytes are transferred to it, not copied. Opening an unchanged file has the worker read just the saved chapter (the first, for a book never opened) and its neighbours from their own documents (`readEpubParagraphs`) and send them back at once, then parse the whole book. The partly loaded book has the whole book's offsets, so progress stays exact. Until the rest arrives, the page indicator (which opens the scrubber) is disabled and shows a spinner, and moving to a chapter that isn't loaded yet waits for it. A book imported before layouts existed gets one on its first open. A changed file, a new parser version or a layout that doesn't fit falls back to the full parse.
 - Android lists the app under "Open with" and "Share" for EPUBs (intent filters for `application/epub+zip`). A file opened that way goes to the library and is imported there, like one picked with "Import a file"; if the sending app doesn't offer lasting access, the import says the file may need finding again later.
 - Books can also be created empty and built chapter by chapter in the editor: add a chapter from a file or pasted text/markdown, rename, reorder and delete chapters. Reading progress follows its chapter when chapters move.
+- Books made in the editor (Create a book) can be shared from the editor's Share button, two ways:
+  - **Temporis book** (`<title>.temporis.json`, `src/books/share.ts`): the book's id, title, language, created/modified dates and each chapter's own text and format. Not reading progress. Importing it (Import a file, or Android "Open with" / "Share") keeps the id, so importing a later version of the same book finds it: unchanged, it's ignored; changed, the app asks to **Replace** (keeping the reader's place: same chapter by id, and the same paragraph if its text is still there, wherever it moved), **Keep both** (a copy with a new id) or cancel. Ids are random UUIDs.
+  - **EPUB** (`src/books/epub-export.ts`): EPUB 3 with an NCX, one XHTML file per chapter built from the reader's index (headings, bold/italic, scene breaks), the book id as `urn:uuid:` identifier. For other e-readers; imported into Temporis it's a linked EPUB like any other.
+  Only editor books have Share (`isEditorBook`: `origin: 'editor'`, or for books from before 0.17, any stored-text book that isn't one whole imported file); a whole imported .txt/.md is shared as that file, an EPUB as itself.
 - A book is an ordered list of sources; on every change the sources are re-parsed into one index (paragraph offsets, headings, bold/italic marks, scene breaks, chapters).
 - Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator.
 - Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 1 s.
@@ -38,7 +42,9 @@ packages/book-parser/       @temporis/book-parser: the parser, no app dependenci
 src/
   books/linked-files.ts     files read in place (EPUBs): pick, read, checksum, release
   books/parse-worker.ts     EPUB parsing off the main thread (books/parse-off-thread.ts is its client)
-  books/library.ts          book storage, import/create/edit, progress
+  books/library.ts          book storage, import/create/edit, progress, shared-book import (replace / keep both)
+  books/share.ts            the shared book file (.temporis.json): format, checks
+  books/epub-export.ts      a book as an EPUB 3 (with a minimal ZIP writer)
   backup.ts                 backup file: create, check, restore
   auto-backup.ts            automatic backups to a chosen folder
   missing-dictionaries.ts   after a restore: "add <language> again?"

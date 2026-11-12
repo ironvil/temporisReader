@@ -102,6 +102,27 @@ export class App {
     }
   }
 
+  /**
+   * Picks a file of /sdcard/Download in the system file picker, which is already open. The picker
+   * can open on Downloads and then switch to Recent by itself, undoing the navigation: go there
+   * again until the file is listed.
+   */
+  async pickDownload(name: string): Promise<void> {
+    await step(`pick ${name} in Downloads`, async () => {
+      for (let attempt = 1; ; attempt++) {
+        await this.tapOnce({ desc: 'Show roots' });
+        await this.tapOnce({ text: 'Downloads' });
+        try {
+          await this.device.wait({ text: name }, { timeout: 5000 });
+          break;
+        } catch (err) {
+          if (attempt >= 3) throw err;
+        }
+      }
+      await this.tapOnce({ text: name });
+    });
+  }
+
   async toast(text: string | RegExp): Promise<void> {
     await expect(this.page.locator('#toast.visible')).toHaveText(text);
   }

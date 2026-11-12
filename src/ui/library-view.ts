@@ -1,4 +1,4 @@
-import { createBook, deleteBook, importPickedFile, importWebFile, listBooks, type BookMeta, type ImportResult } from '../books/library';
+import { createBook, deleteBook, importPickedFile, importSharedBook, importWebFile, listBooks, type BookMeta, type ImportOutcome, type ShareConflict } from '../books/library';
 import { nativePicker, pickFile, type PickedFile } from '../books/linked-files';
 import { getLanguage } from '../languages';
 import { bookWordCounts, formatShare, knownShare } from '../vocab/book-stats';
@@ -68,7 +68,7 @@ export class LibraryView {
           'li',
           { class: 'empty' },
           icon('book'),
-          el('p', {}, 'No books yet. Import an .epub, .txt or .md file, or create a book and add chapters to it.'),
+          el('p', {}, 'No books yet. Import an .epub, .txt or .md file or a shared Temporis book, or create a book and add chapters to it.'),
           el('div', { class: 'actions' }, importButton, createButton),
         ),
       );
@@ -170,6 +170,40 @@ export class LibraryView {
     }
   }
 
+  /**
+   * A shared book that's already in the library, changed: replace it (keeping the reading place),
+   * keep both, or cancel.
+   */
+  private askReplace({ shared, existing }: ShareConflict['conflict']): void {
+    const when = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    const chapters = (n: number) => `${n} ${n === 1 ? 'chapter' : 'chapters'}`;
+    const sharedChapters = shared.chapters.length;
+    const yours = existing.sources.length;
+    const newer = Date.parse(shared.modifiedAt) > (existing.modifiedAt ?? existing.addedAt);
+    const done = async (book: BookMeta, message: string) => {
+      toast(message.replace('%', book.title));
+      await this.refresh();
+    };
+    openDialog({
+      title: 'Replace this book?',
+      content: [
+        el('p', {}, `“${existing.title}” is already in your library.`),
+        el(
+          'dl',
+          { class: 'versions' },
+          el('dt', {}, 'Yours'),
+          el('dd', { 'data-version': 'yours' }, `${chapters(yours)} · changed ${when(existing.modifiedAt ?? existing.addedAt)}`),
+          el('dt', {}, newer ? 'This file (newer)' : 'This file'),
+          el('dd', { 'data-version': 'file' }, `${chapters(sharedChapters)} · changed ${when(Date.parse(shared.modifiedAt))}`),
+        ),
+        el('p', { class: 'setting-help' }, 'Replacing keeps your reading position. Keeping both adds this file as a separate book.'),
+      ],
+      confirmLabel: 'Replace',
+      onConfirm: async () => done(await importSharedBook(shared, 'replace'), 'Replaced “%”'),
+      alternative: { label: 'Keep both', onClick: async () => done(await importSharedBook(shared, 'copy'), 'Imported “%” as a separate book') },
+    });
+  }
+
   /** Android: the system picker, so EPUBs can be linked where they are. Web: a file input. */
   private chooseFile(): void {
     if (!nativePicker()) {
@@ -194,10 +228,11 @@ export class LibraryView {
     await this.runImport(() => importWebFile(file));
   }
 
-  private async runImport(task: () => Promise<ImportResult | null>): Promise<void> {
+  private async runImport(task: () => Promise<ImportOutcome | null>): Promise<void> {
     try {
       const result = await task();
       if (!result) return;
+      if ('conflict' in result) return this.askReplace(result.conflict);
       const { book, duplicate, persisted } = result;
       if (duplicate) toast(`“${book.title}” is already in your library`);
       else if (!persisted) toast(`Imported “${book.title}”. Android won’t keep access to that location, so you may need to find the file again later.`);

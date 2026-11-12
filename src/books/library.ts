@@ -18,6 +18,7 @@ import { detectLanguage, getLanguage } from '../languages';
 import { ensureDir, moveFile, readJson, readText, removeDir, removeFile, writeJson, writeText } from '../storage';
 import { locateOffset } from '../reader/scrub';
 import { parseEpubOffThread, type PartialRead } from './parse-off-thread';
+import { isSafeId, looksLikeSharedBook, parseSharedBook, SHARE_APP, SHARE_KIND, SHARE_VERSION, type SharedBook } from './share';
 import { LinkedFileError, linkWebFile, readLinkedFile, releaseLinkedFile, sha256, type LinkedFile, type PickedFile } from './linked-files';
 import { assembleBook, decodeText, EpubError, oldTextOffset, formatFromFileName, parseBook, PARSER_VERSION, type EpubBook, type EpubLayout, type BookChapter, type BookFormat, type BookIndex, type InlineMark, type ParsedBook } from '@temporis/book-parser';
 
@@ -81,6 +82,13 @@ export interface BookMeta {
   contentVersion?: number;
   /** True once the user picked the language in the editor; detection then leaves it alone. */
   languageChosen?: boolean;
+  /**
+   * How the book was made: 'editor' (Create a book, or a shared book imported) or 'file' (a .txt
+   * or .md imported whole). Absent for EPUBs and for books from before 0.17 (see isEditorBook).
+   */
+  origin?: 'editor' | 'file';
+  /** Last change to the title, language or chapters (absent: never changed since it was added). */
+  modifiedAt?: number;
 }
 
 export interface OpenBook {
@@ -134,6 +142,25 @@ export interface ImportResult {
   /** False when Android won't keep access to the file (it'll need finding again after a restart). */
   persisted: boolean;
 }
+
+/** A shared book whose id is already in the library (with different contents): the user decides. */
+export interface ShareConflict {
+  conflict: { shared: SharedBook; existing: BookMeta };
+}
+
+export type ImportOutcome = ImportResult | ShareConflict;
+
+/**
+ * Books made in the editor (Create a book), which can be shared. Before origins were recorded:
+ * any book with only stored text that isn't a single file imported whole.
+ */
+export function isEditorBook(meta: BookMeta): boolean {
+  if (meta.origin) return meta.origin === 'editor';
+  return !isLinked(meta) && !(meta.sources.length === 1 && meta.sources[0].split && meta.sources[0].fileName !== null);
+}
+
+/** Records a change to what's shared (title, language, chapters). */
+const touch = (meta: BookMeta) => (meta.modifiedAt = Date.now());
 
 export const isLinked = (meta: BookMeta) => meta.sources.some((s) => s.file);
 export const isEpubFileName = (name: string) => /\.epub$/i.test(name);
@@ -240,8 +267,14 @@ export async function getBook(id: string): Promise<BookMeta> {
   return find(id);
 }
 
+/** A random UUID (v4): books shared between phones keep theirs, so it must never repeat. */
 function newId(): string {
-  return crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export const titleFromFileName = (name: string) => name.replace(/\.[^.]+$/, '');
@@ -448,7 +481,7 @@ async function readPartial(meta: BookMeta, layout: BookLayout, partials: Map<num
  * Records a new index in the book's metadata: counts, language, progress (kept on the same chapter,
  * or with `samePlace`, at the same place in the text: the text is unchanged but chapters moved).
  */
-async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], samePlace = false, oldParser?: number): Promise<void> {
+async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], samePlace = false, oldParser?: number, reading: string | null = null): Promise<void> {
   meta.contentVersion = (meta.contentVersion ?? 0) + 1;
   meta.chapterCount = built.index.chapters.length;
   meta.paragraphCount = built.index.paragraphOffsets.length;
@@ -459,15 +492,20 @@ async function applyBuild(meta: BookMeta, built: Built, parts: ReadSource[], sam
   meta.progress = samePlace
     ? relocateProgress(meta.progress, built, oldParser !== undefined && oldParser < 5 ? removedBreakOffsets(parts, built) : [])
     : remapProgress(meta.progress, built);
+  // The paragraph being read, found again by its text if paragraphs before it were added or removed.
+  if (!samePlace && reading !== null && meta.progress) meta.progress = findParagraph(built, meta.progress, reading) ?? meta.progress;
   await persist();
 }
 
 /**
  * Rebuilds the index from the sources, and keeps progress on the same chapter (or, with
- * `samePlace`, at the same place in the text). Books made only of
+ * `samePlace`, at the same place in the text). Within the chapter, the reader stays on the paragraph
+ * they were reading when its text is still there (books of stored text only: linked books keep no
+ * copy of the old text), else on the same paragraph number. Books made only of
  * stored text cache it in derived/<id>/content.txt and index.json; books with a linked file are never cached.
  */
 async function rebuild(meta: BookMeta, samePlace = false, oldParser?: number): Promise<Built> {
+  const reading = samePlace ? null : await readingParagraph(meta);
   const { built, parts } = await build(meta);
   if (!isLinked(meta)) {
     await writeText(`${derivedDir(meta.id)}/content.txt`, built.content);
@@ -476,9 +514,18 @@ async function rebuild(meta: BookMeta, samePlace = false, oldParser?: number): P
     await removeFile(`${derivedDir(meta.id)}/content.txt`);
     await removeFile(`${derivedDir(meta.id)}/index.json`);
   }
-  await applyBuild(meta, built, parts, samePlace, oldParser);
+  await applyBuild(meta, built, parts, samePlace, oldParser, reading);
   if (isLinked(meta)) await saveLayout(meta, built, parts);
   return built;
+}
+
+/** The text of the paragraph being read, from the cached text (null if there's none). */
+async function readingParagraph(meta: BookMeta): Promise<string | null> {
+  if (!meta.progress) return null;
+  const content = await readText(`${derivedDir(meta.id)}/content.txt`);
+  const index = content === null ? null : await readJson<BookIndex>(`${derivedDir(meta.id)}/index.json`);
+  const chapter = index?.chapters[meta.progress.chapter];
+  return content !== null && index && chapter ? paragraphText(content, index, chapter.start + meta.progress.paragraph) : null;
 }
 
 /**
@@ -568,22 +615,26 @@ async function importBookText(fileName: string, text: string, format: BookFormat
     chapterCount: 0,
     paragraphCount: 0,
     progress: null,
+    origin: 'file',
   };
   (await load()).push(meta);
   await rebuild(meta);
   return meta;
 }
 
+const UNSUPPORTED = 'Only .epub, .txt, .md and shared Temporis books (.temporis.json) are supported';
+
 /** Web: imports a file chosen with <input type=file>. EPUBs are linked, text files copied. */
-export async function importWebFile(file: File): Promise<ImportResult> {
+export async function importWebFile(file: File): Promise<ImportOutcome> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (isEpubFileName(file.name) || looksLikeZip(bytes)) return importEpub(await linkWebFile(file), bytes);
-  if (!formatFromFileName(file.name)) throw new Error('Only .epub, .txt and .md files are supported');
+  if (looksLikeSharedBook(file.name, bytes)) return importShared(parseSharedBook(decodeText(bytes)));
+  if (!formatFromFileName(file.name)) throw new Error(UNSUPPORTED);
   return { book: await importBook(file), duplicate: false, persisted: true };
 }
 
 /** Android: imports a file from the system picker. EPUBs stay linked; text files are copied and let go. */
-export async function importPickedFile(picked: PickedFile): Promise<ImportResult> {
+export async function importPickedFile(picked: PickedFile): Promise<ImportOutcome> {
   let bytes: Uint8Array;
   try {
     bytes = await readLinkedFile(picked);
@@ -593,8 +644,9 @@ export async function importPickedFile(picked: PickedFile): Promise<ImportResult
   }
   if (isEpubFileName(picked.name) || looksLikeZip(bytes)) return importEpub(picked, bytes);
   try {
+    if (looksLikeSharedBook(picked.name, bytes)) return await importShared(parseSharedBook(decodeText(bytes)));
     const format = formatFromFileName(picked.name);
-    if (!format) throw new Error('Only .epub, .txt and .md files are supported');
+    if (!format) throw new Error(UNSUPPORTED);
     return { book: await importBookText(picked.name, decodeText(bytes), format), duplicate: false, persisted: true };
   } finally {
     await releaseIfUnused(picked.uri);
@@ -716,10 +768,146 @@ export async function createBook(title: string): Promise<BookMeta> {
     chapterCount: 0,
     paragraphCount: 0,
     progress: null,
+    origin: 'editor',
   };
   (await load()).push(meta);
   await rebuild(meta);
   return meta;
+}
+
+/** A book made in the editor, as a shared book file (see share.ts). */
+export async function sharedBookOf(bookId: string): Promise<SharedBook> {
+  const meta = await find(bookId);
+  if (!isEditorBook(meta)) throw new Error('Only books made with Create a book can be shared');
+  const chapters = [];
+  for (const source of meta.sources) {
+    const text = await readText(`${dir(meta.id)}/${source.path}`);
+    if (text === null || source.format === 'epub') throw new Error(`The text of “${source.title}” is missing`);
+    chapters.push({ id: source.id, title: source.title, format: source.format, fileName: source.fileName, split: source.split, text });
+  }
+  return {
+    app: SHARE_APP,
+    kind: SHARE_KIND,
+    version: SHARE_VERSION,
+    id: meta.id,
+    title: meta.title,
+    language: meta.language,
+    languageChosen: meta.languageChosen ?? false,
+    createdAt: new Date(meta.addedAt).toISOString(),
+    modifiedAt: new Date(meta.modifiedAt ?? meta.addedAt).toISOString(),
+    appVersion: __APP_VERSION__,
+    chapters,
+  };
+}
+
+/**
+ * Imports a shared book. A new id becomes a new book with that id (so a later version finds it);
+ * one already in the library is a conflict for the user to settle (importSharedBook), unless
+ * nothing in it changed.
+ */
+async function importShared(shared: SharedBook): Promise<ImportOutcome> {
+  const existing = isSafeId(shared.id) ? (await load()).find((b) => b.id === shared.id) : undefined;
+  if (!existing) return { book: await importSharedBook(shared, 'new'), duplicate: false, persisted: true };
+  // Only a book made in the editor can be a version of this one (ids are random: anything else is a made-up file).
+  if (!isEditorBook(existing)) return { book: await importSharedBook(shared, 'copy'), duplicate: false, persisted: true };
+  if (await sameAsShared(existing, shared)) return { book: existing, duplicate: true, persisted: true };
+  return { conflict: { shared, existing } };
+}
+
+async function sameAsShared(meta: BookMeta, shared: SharedBook): Promise<boolean> {
+  if (meta.title !== shared.title || meta.sources.length !== shared.chapters.length) return false;
+  for (const [i, source] of meta.sources.entries()) {
+    const c = shared.chapters[i];
+    if (source.id !== c.id || source.title !== c.title || source.format !== c.format || source.split !== c.split) return false;
+    if ((await readText(`${dir(meta.id)}/${source.path}`)) !== c.text) return false;
+  }
+  return true;
+}
+
+/**
+ * Adds a shared book: 'new' with its own id, 'copy' with a new one (keeping both), or 'replace'
+ * the book with its id, keeping the reader's place: on the same chapter (by id), at the same
+ * paragraph when its text is still there, even if paragraphs before it were added or removed.
+ */
+export async function importSharedBook(shared: SharedBook, mode: 'new' | 'copy' | 'replace'): Promise<BookMeta> {
+  if (!shared.chapters.some((c) => parseBook(c.text, c.format, '').paragraphs.length)) throw new Error('That book has no readable text');
+  const id = mode === 'copy' || !isSafeId(shared.id) ? newId() : shared.id;
+  if (mode === 'replace') return serial(id, () => replaceWithShared(id, shared));
+  if ((await load()).some((b) => b.id === id)) throw new Error('That book is already in your library');
+  const sources: SourceMeta[] = [];
+  for (const c of shared.chapters) sources.push(await writeSource(id, { id: c.id, title: c.title, format: c.format, fileName: c.fileName, split: c.split }, c.text));
+  const meta: BookMeta = {
+    id,
+    title: shared.title,
+    language: shared.languageChosen ? shared.language : null,
+    languageChosen: shared.languageChosen || undefined,
+    addedAt: Date.now(),
+    lastOpenedAt: null,
+    sources,
+    chapterCount: 0,
+    paragraphCount: 0,
+    progress: null,
+    origin: 'editor',
+    modifiedAt: Date.parse(shared.modifiedAt) || undefined,
+  };
+  (await load()).push(meta);
+  await rebuild(meta);
+  return meta;
+}
+
+async function replaceWithShared(id: string, shared: SharedBook): Promise<BookMeta> {
+  const meta = await find(id);
+  const old = meta.sources;
+  const sources: SourceMeta[] = [];
+  for (const c of shared.chapters) sources.push(await writeSource(id, { id: c.id, title: c.title, format: c.format, fileName: c.fileName, split: c.split }, c.text));
+  for (const source of old) if (!sources.some((s) => s.path === source.path)) await removeFile(`${dir(id)}/${source.path}`);
+  meta.sources = sources;
+  meta.title = shared.title;
+  meta.languageChosen = shared.languageChosen || undefined;
+  if (shared.languageChosen) meta.language = shared.language;
+  meta.origin = 'editor';
+  meta.modifiedAt = Date.parse(shared.modifiedAt) || Date.now();
+  // rebuild keeps the reader's place: same chapter, and the same paragraph if its text is still there.
+  await rebuild(meta);
+  return meta;
+}
+
+function paragraphText(content: string, index: BookIndex, p: number): string | null {
+  const start = index.paragraphOffsets[p];
+  if (start === undefined) return null;
+  const end = index.paragraphOffsets[p + 1];
+  return content.slice(start, end === undefined ? content.length : end - 1);
+}
+
+/**
+ * Progress moved to the paragraph with this text nearest to where it is now: in its chapter first,
+ * then anywhere in the book. Null when no paragraph has that text (it was edited or removed).
+ */
+function findParagraph(built: Built, progress: Progress, text: string): Progress | null {
+  const { index, content } = built;
+  const here = index.chapters[progress.chapter];
+  if (!here) return null;
+  const at = here.start + progress.paragraph;
+  const nearest = (from: number, to: number) => {
+    let best = -1;
+    for (let p = from; p < to; p++) if (paragraphText(content, index, p) === text && (best < 0 || Math.abs(p - at) < Math.abs(best - at))) best = p;
+    return best;
+  };
+  let p = nearest(here.start, here.end);
+  if (p < 0) p = nearest(0, index.paragraphOffsets.length);
+  if (p < 0) return null;
+  const chapter = index.chapters.findIndex((c) => p >= c.start && p < c.end);
+  const c = index.chapters[chapter];
+  const char = Math.min(progress.char, text.length);
+  return {
+    ...progress,
+    chapter,
+    paragraph: p - c.start,
+    char,
+    source: c.source,
+    sourceChapter: c.sourceChapter,
+    fraction: Math.min(1, (index.paragraphOffsets[p] + char) / Math.max(1, content.length)),
+  };
 }
 
 /** Suggested chapter title: first heading in the text, else the file name. */
@@ -748,6 +936,7 @@ export function addChapter(bookId: string, chapter: NewChapter): Promise<void> {
       (split ? parsed.title || fromFile || `Part ${meta.sources.length + 1}` : suggestChapterTitle(chapter.text, chapter.format, chapter.fileName) || `Chapter ${meta.chapterCount + 1}`);
     const source = await writeSource(bookId, { id: newId(), title, format: chapter.format, fileName: chapter.fileName ?? null, split }, chapter.text);
     meta.sources.push(source);
+    touch(meta);
     await rebuild(meta);
   });
 }
@@ -763,6 +952,7 @@ export function removeChapter(bookId: string, sourceId: string): Promise<void> {
     const source = meta.sources.find((s) => s.id === sourceId);
     if (!source) return;
     meta.sources = meta.sources.filter((s) => s !== source);
+    touch(meta);
     await rebuild(meta);
     if (source.file) await releaseIfUnused(source.file.uri);
     else await removeFile(`${dir(bookId)}/${source.path}`);
@@ -777,6 +967,7 @@ export function moveChapter(bookId: string, sourceId: string, delta: number): Pr
     if (from < 0 || to < 0 || to >= meta.sources.length) return;
     const [source] = meta.sources.splice(from, 1);
     meta.sources.splice(to, 0, source);
+    touch(meta);
     await rebuild(meta);
   });
 }
@@ -787,6 +978,7 @@ export function renameChapter(bookId: string, sourceId: string, title: string): 
     const source = meta.sources.find((s) => s.id === sourceId);
     if (!source || !title.trim() || source.title === title.trim()) return;
     source.title = title.trim();
+    touch(meta);
     await rebuild(meta);
   });
 }
@@ -797,6 +989,7 @@ export function setBookLanguage(bookId: string, language: string | null): Promis
     const meta = await find(bookId);
     meta.language = language;
     meta.languageChosen = true;
+    touch(meta);
     await persist();
   });
 }
@@ -804,8 +997,9 @@ export function setBookLanguage(bookId: string, language: string | null): Promis
 export function renameBook(bookId: string, title: string): Promise<void> {
   return serial(bookId, async () => {
     const meta = await find(bookId);
-    if (!title.trim()) return;
+    if (!title.trim() || meta.title === title.trim()) return;
     meta.title = title.trim();
+    touch(meta);
     await persist();
   });
 }

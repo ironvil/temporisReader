@@ -43,6 +43,19 @@
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
 
+            <!-- Shared Temporis books (.temporis.json): "Open with" and "Share" to the app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+
         </activity>
 
         <provider
