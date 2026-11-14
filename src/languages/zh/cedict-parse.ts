@@ -86,3 +86,16 @@ export function lookupCedict(index: CedictIndex, word: string): CedictEntry[] {
   const score = (e: CedictEntry) => (e.simplified === word ? 0 : 2) + (/^[A-Z]/.test(e.pinyin) ? 1 : 0);
   return entries.sort((a, b) => score(a) - score(b));
 }
+
+/** The simplified spelling of `word` when it's a traditional headword written differently, or null. */
+export function simplifiedOf(index: CedictIndex, word: string): string | null {
+  for (const line of index.lines.get(word) ?? []) {
+    const sp1 = line.indexOf(' ');
+    const sp2 = line.indexOf(' ', sp1 + 1);
+    if (line.slice(0, sp1) === word) {
+      const simplified = line.slice(sp1 + 1, sp2);
+      if (simplified !== word) return simplified;
+    }
+  }
+  return null;
+}

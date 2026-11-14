@@ -1,14 +1,14 @@
-import { DictionaryWordSegmenter } from '../../segmentation/dictionary';
-import { IntlWordSegmenter } from '../../segmentation/intl';
 import { spanAt, type WordSegmenter } from '../../segmentation/types';
+import { getSettings, updateSettings } from '../../settings';
 import { el } from '../../ui/dom';
 import type { LanguageModule, LookupResult } from '../types';
 import { CedictDictionary } from './cedict';
 import type { CedictEntry } from './cedict-parse';
+import { loadJieba, type JiebaData } from './jieba/load';
 import { formatInlinePinyin, formatPinyin, pinyinSyllables } from './pinyin';
+import { buildChineseSegmenter, CHINESE_SEGMENTERS, DEFAULT_CHINESE_SEGMENTER } from './segmenters';
 
 const HAN = /\p{Script=Han}/u;
-const HAN_RUN = /\p{Script=Han}+/gu;
 const ALL_HAN = /^\p{Script=Han}+$/u;
 
 export class ChineseLanguage implements LanguageModule<CedictEntry> {
@@ -19,13 +19,35 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
   readonly sampleText = '今天早上，阳光从高高的窗户里斜斜地照进来。';
   readonly cedict: CedictDictionary;
   readonly dictionaries;
-  readonly segmenter: WordSegmenter;
+  /** jieba's word counts (for CC-CEDICT's words) and unknown-word model, loaded with CC-CEDICT. */
+  private jieba: JiebaData | null = null;
+  private built: { id: string; jieba: JiebaData | null; result: { segmenter: WordSegmenter; key: string } } | null = null;
 
   constructor(cedict = new CedictDictionary()) {
     this.cedict = cedict;
     this.dictionaries = [cedict];
-    // Dictionary-driven segmentation of Han text; ICU handles punctuation and embedded Latin text.
-    this.segmenter = new DictionaryWordSegmenter(cedict, HAN_RUN, new IntlWordSegmenter('zh'));
+    // jieba's data is bundled, so this only fails if the app is broken: then split by fewest words.
+    cedict.onDecode = async (index) => {
+      try {
+        this.jieba = await loadJieba((word) => index.lines.has(word));
+      } catch (err) {
+        console.error('Chinese word counts failed to load', err);
+        this.jieba = null;
+      }
+    };
+  }
+
+  /** The segmenter chosen in settings (Settings → Languages → Chinese), rebuilt when that changes. */
+  get segmenter(): WordSegmenter {
+    return this.current().segmenter;
+  }
+
+  private current(): { segmenter: WordSegmenter; key: string } {
+    const id = getSettings().chineseSegmenter;
+    if (this.built?.id !== id || this.built.jieba !== this.jieba) {
+      this.built = { id, jieba: this.jieba, result: buildChineseSegmenter(id, { dictionary: this.cedict, jieba: this.jieba }) };
+    }
+    return this.built!.result;
   }
 
   detect(sample: string): number {
@@ -42,7 +64,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
 
   segmentationKey(): string | null {
     const key = this.cedict.dataKey;
-    return key && `zh:cedict:${key}`;
+    return key && `zh:cedict:${key}:${this.current().key}`;
   }
 
   wordKey(word: string): string | null {
@@ -78,7 +100,7 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
       if (entries.length) return result(span.start, span.end, entries);
     }
 
-    // Shouldn't normally happen (single characters are always segments), but fall back to the
+    // A word the unknown-word joiner made (a name) isn't in the dictionary: fall back to the
     // longest dictionary word starting at the tap.
     for (let end = Math.min(paragraph.length, index + this.cedict.maxLengthFrom(char)); end > index; end--) {
       const entries = this.cedict.lookup(paragraph.slice(index, end));
@@ -89,6 +111,21 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
       ...result(index, index + char.length, []),
       notice: { kind: 'not-found', message: 'No dictionary entry found.' },
     };
+  }
+
+  settingsRows(): HTMLElement {
+    const chosen = CHINESE_SEGMENTERS.find((o) => o.id === getSettings().chineseSegmenter) ?? CHINESE_SEGMENTERS.find((o) => o.id === DEFAULT_CHINESE_SEGMENTER)!;
+    const select = el(
+      'select',
+      { 'aria-label': 'Word splitting' },
+      ...CHINESE_SEGMENTERS.map((o) => el('option', { value: o.id, selected: o === chosen }, o.label)),
+    );
+    const help = el('p', { class: 'setting-help' }, chosen.description);
+    select.addEventListener('change', () => {
+      help.textContent = CHINESE_SEGMENTERS.find((o) => o.id === select.value)!.description;
+      void updateSettings({ chineseSegmenter: select.value });
+    });
+    return el('div', { class: 'lang-options' }, el('div', { class: 'setting-row' }, el('span', {}, 'Word splitting'), select), help);
   }
 
   renderEntries(result: LookupResult<CedictEntry>): HTMLElement {

@@ -19,6 +19,11 @@ export function fakeCedict(): Buffer {
     '金色 金色 [jin1 se4] /golden/',
     '鏡子 镜子 [jing4 zi5] /mirror/',
     '貓頭鷹 猫头鹰 [mao1 tou2 ying1] /owl/',
+    // Overlapping words: 他说的确实在理 splits differently by fewest words and by most likely.
+    '的確 的确 [di2 que4] /really/',
+    '實在 实在 [shi2 zai4] /really; actually/',
+    '確實 确实 [que4 shi2] /indeed/',
+    '在理 在理 [zai4 li3] /reasonable/',
     '了 了 [le5] /' + Array.from({ length: 30 }, (_, i) => `long definition number ${i + 1} to make the popup overflow`).join('/') + '/',
   ];
   for (let i = 0; i < 1100; i++) lines.push(`測${i} 测${i} [ce4] /filler ${i}/`);

@@ -17,11 +17,13 @@ export interface Settings {
   chapterFormat: 'txt' | 'md';
   /** How the Japanese popup shows readings: kana (furigana) or romaji. */
   japaneseReadings: 'kana' | 'romaji';
+  /** How Chinese text is split into words: an id from CHINESE_SEGMENTERS (src/languages/zh/segmenters.ts). */
+  chineseSegmenter: string;
 }
 
 export const FONT_SIZES = { min: 14, max: 40, step: 2 };
 
-const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, trackOnLookup: true, chapterFormat: 'txt', japaneseReadings: 'kana' };
+const DEFAULTS: Settings = { fontSize: 22, theme: 'system', highlightWords: false, markKnownPrompt: true, downgradeOnLookup: true, trackOnLookup: true, chapterFormat: 'txt', japaneseReadings: 'kana', chineseSegmenter: 'frequency-names' };
 const FILE = 'settings.json';
 
 let current: Settings = { ...DEFAULTS };

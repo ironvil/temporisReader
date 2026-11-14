@@ -18,7 +18,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Languages are added in Settings → Languages → (language), each with its own page, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT. French uses English Wiktionary via kaikki.org: a ~60 MB download that is streamed through once on the phone and trimmed to ~6 MB (`src/languages/wiktionary/`, shared by any Wiktionary language; measure with `node scripts/measure-wiktionary.mjs <file.jsonl.gz> <code>`).
 - German (Wiktionary, ~100 MB download → ~8 MB stored): separable verbs are joined with their clause-final particle (fängt … an → anfangen, tracked and counted as anfangen); compounds that aren't entries are shown as their parts (Donau + Dampfschiff + Kapitän) and not tracked; at a sentence start the lower-case word wins (Ich → ich).
 - French: inflected forms show their dictionary form (mangeaient → manger) with the inflection note, and known words are tracked by dictionary form, so every form of a word shares one level. Elisions split off (l’homme → l’ + homme) and hyphenated entries stay whole (peut-être).
-- Chinese word segmentation is dictionary-based (fewest-words split over CC-CEDICT), behind the `WordSegmenter` interface.
+- Chinese word segmentation splits text into CC-CEDICT words, chosen in Settings → Languages → Chinese → Word splitting (`src/languages/zh/segmenters.ts`): *Most likely words + names* (the default) weighs words by jieba's word counts and joins names the dictionary doesn't have with jieba's hidden Markov model (never through numerals or the 100 most common single characters, which otherwise join wrongly: 一年, 这是); *Most likely words* is the same without names; *Fewest words* is the old split. Names aren't tracked as known words. jieba's data (MIT) is bundled, 1.9 MB, built by `node scripts/build-jieba-data.mjs` and loaded with CC-CEDICT. `node --experimental-transform-types scripts/measure-chinese-segmentation.mjs <cc-cedict.txt.gz> <gold.utf8>…` scores the options against hand-segmented text (SIGHAN 2005 PKU / MSR, F1: 87.8 / 86.8%, 87.4 / 86.2%, 85.3 / 84.8%). jieba-wasm, pkuseg and HanLP were tried and weren't enough better to ship.
 - Japanese uses JMdict (EDRDG: an 11 MB download, 63 MB of XML, streamed through once and stored trimmed as 11 MB gzipped, ~31 MB in memory: one compact line per entry plus a sorted key list for every spelling and reading, `src/languages/ja/jmdict-data.ts`). Readings are shown in the popup only, in kana or romaji (Hepburn, `romaji.ts`; Settings → Languages → Japanese); the text isn't changed. Conjugations are undone by rules (`deinflect.ts`: 食べました → 食べる, polite + past; 書かなかった → 書く; 勉強しました → 勉強), checked against JMdict's part of speech, and words are tracked by that dictionary form as written. Text is split by the same dictionary segmenter as Chinese, weighted: common spellings cost less (可愛い | です | ね, not 可愛 | いで | すね), a conjugated form is one word, and a katakana run JMdict doesn't have (a name) stays whole and untracked. A kanji word's bare reading isn't a word as written (はま isn't 浜), and set expressions and titles (これは, 雨が降る, 吾輩は猫である) are never split into, as they'd swallow particles: the popup shows them as phrases after the tapped word. Detection needs kana (at least a quarter of the kana + kanji), which is what tells Japanese from Chinese.
 - Markdown bold and italics are rendered.
 - Scene breaks are shown as a centred `*   *   *`: Markdown `---`/`***`, EPUB `<hr>`, and lines or paragraphs of only symbols (`* * *`, `＊＊＊`, `◇◇◇`, `⁂`) in any format. They aren't paragraphs: the index marks the paragraph after each one (`breaks`), and CSS draws the asterisks, so they can't be looked up or counted. Breaks at the start of a chapter, next to a heading or at the end are dropped. The asterisks are kept on the same page as the text after them.
@@ -60,11 +60,12 @@ src/
   languages/index.ts        language registry
   languages/downloaded-dictionary.ts  base class: download, progress, store, load, remove
   languages/wiktionary/     any Wiktionary language: kaikki.org data, dictionary, lookups + popup
-  languages/zh/             Chinese: CC-CEDICT, pinyin, popup rendering
+  languages/zh/             Chinese: CC-CEDICT, pinyin, popup rendering, word splitting options
+  languages/zh/jieba/       jieba's word counts and HMM (bundled, MIT; LICENSE alongside)
   languages/fr/             French: Wiktionary + elision/hyphen-aware segmenter, detection
   languages/de/             German: Wiktionary + separable verbs, compound splitting, detection
   languages/ja/             Japanese: JMdict (parsing, storage), conjugation rules, popup, detection
-  segmentation/             WordSegmenter interface; dictionary-based and Intl (ICU) implementations
+  segmentation/             WordSegmenter interface; dictionary-based, word-frequency and Intl (ICU) implementations, unknown-word joiner
   vocab/known-words.ts      known-word levels per language, file format
   vocab/book-stats.ts       known-word percentages per book and chapter
   ui/                       library, book editor and settings screens
@@ -170,7 +171,8 @@ The exception only covers code we own, so third-party code shipped in the app mu
 (MIT, BSD, ISC, Apache-2.0, MPL-2.0, …) or carry an equivalent exception: plain GPL code would keep the app
 out of the App Store, and GPLv2-only code can't be combined with it at all. Dictionaries are downloaded at
 runtime, not bundled, and keep their own licences (CC-CEDICT and Wiktionary: CC BY-SA; JMdict: the EDRDG
-licence, CC BY-SA).
+licence, CC BY-SA). jieba's word counts and model are bundled for Chinese word splitting (MIT, Copyright (c)
+2013 Sun Junyi; `src/languages/zh/jieba/LICENSE`).
 
 Some of the icons in `src/ui/icons.ts` are from [Lucide](https://lucide.dev) (ISC licence, Copyright (c) for
 portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT); all other copyright (c) for Lucide

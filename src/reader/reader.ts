@@ -148,7 +148,8 @@ export class Reader {
     new ResizeObserver(() => this.scheduleRelayout()).observe(this.area);
     onSettingsChange((_, changed) => {
       if (changed.fontSize !== undefined) this.relayout();
-      if (changed.highlightWords !== undefined) this.refreshWordHighlights();
+      // Other settings can change what counts as a word (Chinese word splitting) or what's shown.
+      else this.refreshWordHighlights();
     });
     document.addEventListener('keydown', (e) => {
       if (this.root.hidden || !this.book || document.querySelector('dialog[open]')) return;
