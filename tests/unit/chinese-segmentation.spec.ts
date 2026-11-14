@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { buildCedictIndex, simplifiedOf } from '../../src/languages/zh/cedict-parse';
 import { parseHmm, parseWordCounts } from '../../src/languages/zh/jieba/data';
@@ -8,7 +7,7 @@ import type { WordSegmenter } from '../../src/segmentation/types';
 import { tagCharacters, UnknownWordJoiner, type HmmModel } from '../../src/segmentation/unknown-words';
 
 /** The bundled jieba data, as the app ships it. */
-const jiebaFile = (name: string) => gunzipSync(readFileSync(new URL(`../../src/languages/zh/jieba/${name}`, import.meta.url))).toString('utf8');
+const jiebaFile = (name: string) => readFileSync(new URL(`../../src/languages/zh/jieba/${name}`, import.meta.url), 'utf8');
 
 /** A few CC-CEDICT entries: enough for the classic ambiguous sentences. Names are left out on purpose. */
 const CEDICT = [
@@ -39,14 +38,14 @@ const dictionary = {
 };
 const data: ChineseSegmentationData = {
   dictionary,
-  jieba: { words: parseWordCounts(jiebaFile('words.txt.gz'), (w) => index.lines.has(w)), hmm: parseHmm(jiebaFile('hmm.json.gz')) },
+  jieba: { words: parseWordCounts(jiebaFile('words.txt'), (w) => index.lines.has(w)), hmm: parseHmm(jiebaFile('hmm.json')) },
 };
 
 const split = (seg: WordSegmenter, text: string) => seg.segment(text).map((s) => text.slice(s.start, s.end));
 const segmenter = (id: string, d = data) => buildChineseSegmenter(id, d).segmenter;
 
 test('the bundled jieba data loads', () => {
-  const all = parseWordCounts(jiebaFile('words.txt.gz'));
+  const all = parseWordCounts(jiebaFile('words.txt'));
   expect(all.counts.size).toBeGreaterThan(300_000);
   expect(all.counts.get('确实')).toBeGreaterThan(1000);
   expect(data.jieba!.words.total).toBe(all.total); // the total counts every word, kept or not

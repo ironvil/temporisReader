@@ -52,8 +52,8 @@ const dictionary = {
 };
 const jiebaDir = join(root, 'src/languages/zh/jieba');
 const jieba = {
-  words: parseWordCounts(text(join(jiebaDir, 'words.txt.gz')), (w) => index.lines.has(w)),
-  hmm: parseHmm(text(join(jiebaDir, 'hmm.json.gz'))),
+  words: parseWordCounts(text(join(jiebaDir, 'words.txt')), (w) => index.lines.has(w)),
+  hmm: parseHmm(text(join(jiebaDir, 'hmm.json'))),
 };
 
 const variants = CHINESE_SEGMENTERS.map((o) => ({ name: o.label, id: o.id }));

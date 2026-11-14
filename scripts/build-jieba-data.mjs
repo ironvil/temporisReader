@@ -1,10 +1,12 @@
 /**
  * Builds the bundled Chinese segmentation data from jieba (MIT, https://github.com/fxsjy/jieba)
  * at a pinned commit, into src/languages/zh/jieba/:
- *   words.txt.gz  "word count" per line: how often each all-Han word occurs in jieba's corpus
- *   hmm.json.gz   jieba's hidden Markov model for words it doesn't know (start, transition and
+ *   words.txt     "word count" per line: how often each all-Han word occurs in jieba's corpus
+ *   hmm.json      jieba's hidden Markov model for words it doesn't know (start, transition and
  *                 emission log probabilities for the B/M/E/S states: begin, middle, end, single)
  *   LICENSE       jieba's licence, which has to travel with the data
+ * Plain text, not .gz: Android's build decompresses .gz assets and drops the extension, so the
+ * app wouldn't find them. The APK is zipped anyway, so they cost the same.
  *
  *   node scripts/build-jieba-data.mjs
  *
@@ -14,7 +16,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
 
 const COMMIT = '67fa2e36e72f69d9134b8a1037b83fbb070b9775';
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'languages', 'zh', 'jieba');
@@ -53,9 +54,9 @@ const roundAll = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k,
 const hmm = { start: roundAll(pythonDict(start)), trans: roundAll(pythonDict(trans)), emit: roundAll(pythonDict(emit)) };
 
 mkdirSync(out, { recursive: true });
-const wordsGz = gzipSync(words.join('\n') + '\n', { level: 9 });
-const hmmGz = gzipSync(JSON.stringify(hmm), { level: 9 });
-writeFileSync(join(out, 'words.txt.gz'), wordsGz);
-writeFileSync(join(out, 'hmm.json.gz'), hmmGz);
+const wordsText = words.join('\n') + '\n';
+const hmmText = JSON.stringify(hmm);
+writeFileSync(join(out, 'words.txt'), wordsText);
+writeFileSync(join(out, 'hmm.json'), hmmText);
 writeFileSync(join(out, 'LICENSE'), licence);
-console.log(`jieba ${COMMIT.slice(0, 7)}: ${words.length} words (${(wordsGz.length / 1e6).toFixed(2)} MB), HMM ${Object.keys(hmm.emit.S).length} characters (${(hmmGz.length / 1e3).toFixed(0)} kB)`);
+console.log(`jieba ${COMMIT.slice(0, 7)}: ${words.length} words (${(Buffer.byteLength(wordsText) / 1e6).toFixed(2)} MB), HMM ${Object.keys(hmm.emit.S).length} characters (${(Buffer.byteLength(hmmText) / 1e3).toFixed(0)} kB)`);
