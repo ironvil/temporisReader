@@ -362,11 +362,12 @@ progress {
   inset: 0 var(--safe-right) 0 var(--safe-left);
   overflow: hidden;
   touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
 }
 .page-flow {
   position: absolute;
+  /* Selectable by long press (copy, share, translate); taps and swipes are handled in reader.ts. */
+  user-select: text;
+  -webkit-user-select: text;
   column-fill: auto;
   font-size: var(--reader-font-size);
   line-height: 1.65;

@@ -44,6 +44,35 @@ test('add Chinese in settings, then look up words', async ({ page }) => {
   await expect(popup).toBeHidden();
 });
 
+test('text can be selected: a long press or a selection never opens the popup', async ({ page }) => {
+  await start(page);
+  await addChinese(page);
+  await importBook(page, 'book.txt', chineseBook());
+  await openFirstBook(page);
+  const popup = page.locator('.lookup-popup');
+  const selected = () => page.evaluate(() => document.getSelection()?.toString() ?? '');
+
+  await expect(page.locator('.page-flow')).toHaveCSS('user-select', 'text');
+
+  // A long press is the system's text selection, not a lookup.
+  await tapText(page, '头发', 0, 600);
+  await expect(popup).toBeHidden();
+
+  // Text selected (as a long press on Android does): a tap clears it and doesn't look up.
+  await page.evaluate(() => {
+    const block = document.querySelector('.page-flow [data-block]')!;
+    document.getSelection()!.selectAllChildren(block);
+  });
+  expect(await selected()).not.toBe('');
+  await tapText(page, '头发');
+  await expect(popup).toBeHidden();
+  expect(await selected()).toBe('');
+
+  // With nothing selected, taps look up again.
+  await tapText(page, '头发');
+  await expect(popup.locator('.zh-hanzi')).toHaveText('头发');
+});
+
 test('segmentation does not depend on the browser word breaker', async ({ page }) => {
   // Android WebView's ICU has no Chinese dictionary and splits every character; simulate that.
   await page.addInitScript(() => {

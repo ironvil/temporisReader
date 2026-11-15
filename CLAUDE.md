@@ -33,7 +33,7 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$PATH
   phone: only emulators are used, because the tests uninstall the app.
 
   The tests cover what the web build can only fake: the system file and folder pickers with their
-  persisted grants (LinkedFilesPlugin, BackupFolderPlugin), the share sheet and Android's Auto Backup rules. Add to
+  persisted grants (LinkedFilesPlugin, BackupFolderPlugin), the share sheet, the WebView's long-press text selection and Android's Auto Backup rules. Add to
   them only for native behaviour; keep them few, as each one costs seconds of emulator time.
 
 ## Releases

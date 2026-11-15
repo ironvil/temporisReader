@@ -26,6 +26,8 @@ import { statusButtons, updateLevelOnLookup } from './word-status';
 const MARGIN_X = 20;
 const MARGIN_Y = 16;
 const TAP_SLOP = 10;
+/** A press held this long selects text (Android's long press is 400–500 ms) instead of looking up. */
+const LONG_PRESS = 400;
 const SWIPE_THRESHOLD = 50;
 const SAVE_DELAY = 400;
 
@@ -41,6 +43,11 @@ interface Gesture {
   dragging: boolean;
   /** The pointer went down while the lookup popup was open: a tap only closes it. */
   dismissing: boolean;
+  /** Text was selected when the pointer went down: a tap only clears the selection. */
+  hadSelection: boolean;
+  /** Held still past LONG_PRESS: the system's text selection, not a tap or a swipe. */
+  held: boolean;
+  timer: number;
 }
 
 interface CaretDocument {
@@ -293,6 +300,7 @@ export class Reader {
   next(): void {
     if (!this.book) return;
     this.scrubber.cancel();
+    this.clearSelection();
     const atEnd = this.page === this.pageCount - 1 && this.chapterIndex === this.book.index.chapters.length - 1;
     if (atEnd) return this.applyTransform(true);
     if (this.page === this.pageCount - 1 && !this.chapterReady(this.chapterIndex + 1, () => this.next())) return;
@@ -310,6 +318,7 @@ export class Reader {
   prev(): void {
     if (!this.book) return;
     this.scrubber.cancel();
+    this.clearSelection();
     if (this.page === 0 && this.chapterIndex > 0 && !this.chapterReady(this.chapterIndex - 1, () => this.prev())) return;
     if (this.page > 0) this.setPage(this.page - 1, true);
     else if (this.chapterIndex > 0) {
@@ -622,22 +631,31 @@ export class Reader {
     );
     area.addEventListener('pointerdown', (e) => {
       if (!e.isPrimary || !this.book) return;
-      this.gesture = { x: e.clientX, y: e.clientY, dragging: false, dismissing };
+      this.endGesture();
+      const g: Gesture = { x: e.clientX, y: e.clientY, dragging: false, dismissing, hadSelection: this.hasSelection(), held: false, timer: 0 };
+      g.timer = window.setTimeout(() => {
+        if (!g.dragging) g.held = true;
+      }, LONG_PRESS);
+      this.gesture = g;
     });
     area.addEventListener('pointermove', (e) => {
       const g = this.gesture;
-      if (!g) return;
+      if (!g || g.held) return;
       const dx = e.clientX - g.x;
       const dy = e.clientY - g.y;
       if (!g.dragging && Math.abs(dx) > TAP_SLOP && Math.abs(dx) > Math.abs(dy)) {
         g.dragging = true;
+        clearTimeout(g.timer);
         this.closeLookup();
       }
-      if (g.dragging) this.applyTransform(false, dx);
+      if (g.dragging) {
+        // A mouse drag would select text as it goes; a swipe never selects.
+        this.clearSelection();
+        this.applyTransform(false, dx);
+      }
     });
     area.addEventListener('pointerup', (e) => {
-      const g = this.gesture;
-      this.gesture = null;
+      const g = this.endGesture();
       if (!g) return;
       const dx = e.clientX - g.x;
       const dy = e.clientY - g.y;
@@ -646,14 +664,35 @@ export class Reader {
           if (dx < 0) this.next();
           else this.prev();
         } else this.applyTransform(true);
-      } else if (Math.hypot(dx, dy) < TAP_SLOP && !g.dismissing) {
+      } else if (g.held) {
+        // Long press: leave the selection (and its Copy / Share menu) to the system.
+      } else if (g.hadSelection) {
+        this.clearSelection();
+      } else if (Math.hypot(dx, dy) < TAP_SLOP && !g.dismissing && !this.hasSelection()) {
         void this.onTap(e.clientX, e.clientY);
       }
     });
     area.addEventListener('pointercancel', () => {
-      if (this.gesture?.dragging) this.applyTransform(true);
-      this.gesture = null;
+      // Android cancels the pointer when its long-press selection takes over.
+      if (this.endGesture()?.dragging) this.applyTransform(true);
     });
+  }
+
+  private endGesture(): Gesture | null {
+    const g = this.gesture;
+    if (g) clearTimeout(g.timer);
+    this.gesture = null;
+    return g;
+  }
+
+  /** Text selected in the book (a long press, or a mouse drag in the web build). */
+  private hasSelection(): boolean {
+    const selection = document.getSelection();
+    return !!selection && !selection.isCollapsed && this.flow.contains(selection.anchorNode);
+  }
+
+  private clearSelection(): void {
+    if (this.hasSelection()) document.getSelection()?.removeAllRanges();
   }
 
   // ── Lookup ───────────────────────────────────────────────────────────────

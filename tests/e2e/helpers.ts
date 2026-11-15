@@ -372,8 +372,11 @@ export async function dismissLookup(page: Page): Promise<void> {
   await expect(popup).toBeHidden();
 }
 
-/** Taps a character on the current page. An open popup is dismissed first (a tap while it's open only closes it). */
-export async function tapText(page: Page, needle: string, charOffset = 0): Promise<void> {
+/**
+ * Taps a character on the current page. An open popup is dismissed first (a tap while it's open only closes it).
+ * `hold`: ms between press and release (a long press selects text instead).
+ */
+export async function tapText(page: Page, needle: string, charOffset = 0, hold = 0): Promise<void> {
   await dismissLookup(page);
   const point = await page.evaluate(
     ({ needle, charOffset }) => {
@@ -409,7 +412,7 @@ export async function tapText(page: Page, needle: string, charOffset = 0): Promi
     { needle, charOffset },
   );
   if (!point) throw new Error(`"${needle}" is not visible on this page`);
-  await page.mouse.click(point.x, point.y);
+  await page.mouse.click(point.x, point.y, { delay: hold });
 }
 
 /** Next page via the keyboard (arrow keys turn pages, like swipes). */

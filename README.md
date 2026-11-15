@@ -12,7 +12,7 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
   - **EPUB** (`src/books/epub-export.ts`): EPUB 3 with an NCX, one XHTML file per chapter built from the reader's index (headings, bold/italic, scene breaks), the book id as `urn:uuid:` identifier. For other e-readers; imported into Temporis it's a linked EPUB like any other.
   Only editor books have Share (`isEditorBook`: `origin: 'editor'`, or for books from before 0.17, any stored-text book that isn't one whole imported file); a whole imported .txt/.md is shared as that file, an EPUB as itself.
 - A book is an ordered list of sources; on every change the sources are re-parsed into one index (paragraph offsets, headings, bold/italic marks, scene breaks, chapters).
-- Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator.
+- Paginated reading using CSS columns, with swipe navigation and a page / pages-in-chapter indicator. A tap looks a word up; a long press selects text instead (the system's Copy / Share / Translate menu), and a tap while text is selected only clears it.
 - Tapping the indicator opens a scrubber over the whole book (by character position, chapter breaks marked). Dragging only estimates the page from the page size; the reader jumps — and paginates that one chapter — once the thumb has been still for 1 s.
 - Progress is saved as chapter, paragraph, word (and character offset for exact restore).
 - Languages are added in Settings → Languages → (language), each with its own page, which downloads their dictionaries (never bundled in the APK). Chinese uses CC-CEDICT. French uses English Wiktionary via kaikki.org: a ~60 MB download that is streamed through once on the phone and trimmed to ~6 MB (`src/languages/wiktionary/`, shared by any Wiktionary language; measure with `node scripts/measure-wiktionary.mjs <file.jsonl.gz> <code>`).
@@ -112,7 +112,7 @@ E2E tests intercept the CC-CEDICT download and serve a small fixture, so they ne
 ### Android tests
 
 `npm run test:android` runs `tests/android` on an emulator: the system file and folder pickers
-(persisted grants for EPUBs and the backup folder) and Android's Auto Backup restore (local
+(persisted grants for EPUBs and the backup folder), text selection by a real long press, and Android's Auto Backup restore (local
 transport, as in Google's test script). It builds the debug APK, boots a headless emulator
 (`temporis-test`, created on first run) unless one is already running, drives the app's WebView
 and the system UI with Playwright's Android support, and shuts the emulator down again. About a
