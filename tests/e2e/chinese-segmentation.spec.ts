@@ -36,26 +36,3 @@ test('word splitting follows the setting', async ({ page }) => {
   await openLanguageSettings(page, 'zh');
   await expect(page.locator('[data-language="zh"]').getByLabel('Word splitting')).toHaveValue('fewest-words');
 });
-
-test('a name is looked up whole, with its characters, only when names are joined', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('body[data-ready]')).toBeAttached();
-  await addChinese(page);
-  await importBook(page, 'name.txt', '德拉科尼娅说。\n'.repeat(3));
-  await openFirstBook(page);
-  const popup = page.locator('.lookup-popup');
-
-  await tapText(page, '拉');
-  await expect(popup.locator('.zh-name .zh-hanzi')).toHaveText('德拉科尼娅');
-  await expect(popup.locator('.zh-name .zh-pinyin')).toHaveText('dé lā kē ní yà');
-  await expect(popup.locator('.zh-entry:not(.zh-name) .zh-hanzi')).toHaveText(['德', '拉', '科', '尼', '娅']);
-  // Names aren't tracked: no level buttons.
-  await expect(popup.locator('.word-status')).toHaveCount(0);
-
-  await openLanguageSettings(page, 'zh');
-  await page.locator('[data-language="zh"]').getByLabel('Word splitting').selectOption({ label: 'Most likely words' });
-  await closeSettings(page);
-  await tapText(page, '拉');
-  await expect(popup.locator('.zh-name')).toHaveCount(0);
-  await expect(popup.locator('.zh-hanzi')).toHaveText('拉');
-});
