@@ -96,12 +96,16 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
     // so tapping either character of 头发 gives 头发).
     const span = spanAt(this.segmenter.segment(paragraph), index);
     if (span) {
-      const entries = this.cedict.lookup(paragraph.slice(span.start, span.end));
+      const word = paragraph.slice(span.start, span.end);
+      const entries = this.cedict.lookup(word);
       if (entries.length) return result(span.start, span.end, entries);
+      // A name the unknown-word joiner made (德拉科尼娅): not in the dictionary, so show it whole,
+      // read out, with its characters. Names aren't tracked.
+      const parts = ALL_HAN.test(word) && word.length > 1 ? this.parts(word) : null;
+      if (parts) return { ...result(span.start, span.end, parts), untracked: true };
     }
 
-    // A word the unknown-word joiner made (a name) isn't in the dictionary: fall back to the
-    // longest dictionary word starting at the tap.
+    // Otherwise, the longest dictionary word starting at the tap.
     for (let end = Math.min(paragraph.length, index + this.cedict.maxLengthFrom(char)); end > index; end--) {
       const entries = this.cedict.lookup(paragraph.slice(index, end));
       if (entries.length) return result(index, end, entries);
@@ -111,6 +115,19 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
       ...result(index, index + char.length, []),
       notice: { kind: 'not-found', message: 'No dictionary entry found.' },
     };
+  }
+
+  /** A word that isn't an entry, as the longest dictionary words from the left (each one's first entry); null if one is missing. */
+  private parts(word: string): CedictEntry[] | null {
+    const parts: CedictEntry[] = [];
+    for (let at = 0; at < word.length; ) {
+      let end = Math.min(word.length, at + this.cedict.maxLengthFrom(word[at]));
+      for (; end > at && !this.cedict.lookup(word.slice(at, end)).length; end--);
+      if (end === at) return null;
+      parts.push(this.cedict.lookup(word.slice(at, end))[0]);
+      at = end;
+    }
+    return parts;
   }
 
   settingsRows(): HTMLElement {
@@ -130,19 +147,31 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
 
   renderEntries(result: LookupResult<CedictEntry>): HTMLElement {
     const root = el('div', { class: 'zh-lookup' });
+    if (result.untracked) {
+      // A name (see lookup): the whole name read out, then its characters.
+      root.append(
+        el(
+          'section',
+          { class: 'zh-entry zh-name' },
+          el(
+            'div',
+            { class: 'zh-head' },
+            this.hanzi(result.headword, result.entries.map((e) => e.pinyin).join(' ')),
+            el('span', { class: 'zh-pinyin' }, result.entries.map((e) => formatPinyin(e.pinyin)).join(' ')),
+          ),
+          el('p', { class: 'zh-name-note' }, 'A name, not in the dictionary. Its characters:'),
+        ),
+      );
+    }
     for (const entry of result.entries) {
       // Show the script the book uses first.
-      const tradFirst = entry.traditional === result.headword && entry.simplified !== result.headword;
+      // (For a name's characters, the script the name is written in.)
+      const shown = (w: string) => (result.untracked ? result.headword.includes(w) : w === result.headword);
+      const tradFirst = shown(entry.traditional) && !shown(entry.simplified);
       const primary = tradFirst ? entry.traditional : entry.simplified;
       const secondary = tradFirst ? entry.simplified : entry.traditional;
 
-      const syllables = pinyinSyllables(entry.pinyin);
-      const chars = Array.from(primary);
-      const hanzi = el('span', { class: 'zh-hanzi', lang: this.htmlLang });
-      chars.forEach((c, i) => {
-        const tone = syllables.length === chars.length ? syllables[i].tone : 0;
-        hanzi.append(el('span', { class: `tone tone-${tone}` }, c));
-      });
+      const hanzi = this.hanzi(primary, entry.pinyin);
 
       root.append(
         el(
@@ -155,10 +184,22 @@ export class ChineseLanguage implements LanguageModule<CedictEntry> {
             secondary !== primary ? el('span', { class: 'zh-alt', lang: this.htmlLang }, `[${secondary}]`) : null,
             el('span', { class: 'zh-pinyin' }, formatPinyin(entry.pinyin)),
           ),
-          el('ol', { class: 'defs' }, ...entry.definitions.map((d) => el('li', {}, formatInlinePinyin(d)))),
+          el('ol', { class: 'defs' }, ...(result.untracked ? entry.definitions.slice(0, 3) : entry.definitions).map((d) => el('li', {}, formatInlinePinyin(d)))),
         ),
       );
     }
     return root;
+  }
+
+  /** Characters coloured by tone, when the pinyin has one syllable per character. */
+  private hanzi(text: string, pinyin: string): HTMLElement {
+    const syllables = pinyinSyllables(pinyin);
+    const chars = Array.from(text);
+    const hanzi = el('span', { class: 'zh-hanzi', lang: this.htmlLang });
+    chars.forEach((c, i) => {
+      const tone = syllables.length === chars.length ? syllables[i].tone : 0;
+      hanzi.append(el('span', { class: `tone tone-${tone}` }, c));
+    });
+    return hanzi;
   }
 }
