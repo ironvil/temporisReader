@@ -1,3 +1,4 @@
+import type { UserDictionary } from '../vocab/user-dictionary';
 import type { WordSegmenter, WordSpan } from '../segmentation/types';
 
 /**
@@ -107,6 +108,13 @@ export interface LanguageModule<Entry = unknown> {
    * Returns null when the tapped character isn't part of a word (punctuation, spaces…).
    */
   lookup(paragraph: string, index: number): Promise<LookupResult<Entry> | null>;
+  /**
+   * Optional: words the reader adds from selected text (Add to my words). The language splits text
+   * with them and looks them up; its downloaded dictionaries are never changed.
+   */
+  userWords?: UserDictionary;
+  /** With userWords: the word to add for selected text, or null when it can't be one. */
+  userWordFrom?(text: string): string | null;
   /** Optional: the language's own options, shown on its settings page. */
   settingsRows?(): HTMLElement;
   /** Renders dictionary entries for the popup. Each language decides its own layout. */

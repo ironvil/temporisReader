@@ -10,7 +10,7 @@ const xml = (name: string) => readFileSync(new URL(`../../android/app/src/main/r
 const rules = (text: string, kind: 'include' | 'exclude') => [...text.matchAll(new RegExp(`<${kind} domain="(\\w+)" path="([^"]+)"`, 'g'))].map((m) => `${m[1]}:${m[2]}`);
 const section = (text: string, name: string) => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1] ?? '';
 
-const BACKED_UP = ['file:library.json', 'file:settings.json', 'file:known-words/', 'file:books/'];
+const BACKED_UP = ['file:library.json', 'file:settings.json', 'file:known-words/', 'file:user-dictionary/', 'file:books/'];
 
 test('cloud backups hold only what can’t be rebuilt, on every Android version', () => {
   const old = xml('backup_rules.xml');

@@ -8,6 +8,7 @@
         <include domain="file" path="library.json" />
         <include domain="file" path="settings.json" />
         <include domain="file" path="known-words/" />
+        <include domain="file" path="user-dictionary/" />
         <include domain="file" path="books/" />
     </cloud-backup>
     <!-- A transfer can carry up to 2 GB, so dictionaries come along (not half-finished downloads). -->
@@ -15,6 +16,7 @@
         <include domain="file" path="library.json" />
         <include domain="file" path="settings.json" />
         <include domain="file" path="known-words/" />
+        <include domain="file" path="user-dictionary/" />
         <include domain="file" path="books/" />
         <include domain="file" path="dictionaries/" />
         <exclude domain="file" path="dictionaries/cc-cedict.download.gz" />

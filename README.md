@@ -23,12 +23,13 @@ A paginated foreign-language reader built with Capacitor 8 (Android). Tap a word
 - Markdown bold and italics are rendered.
 - Scene breaks are shown as a centred `*   *   *`: Markdown `---`/`***`, EPUB `<hr>`, and lines or paragraphs of only symbols (`* * *`, `＊＊＊`, `◇◇◇`, `⁂`) in any format. They aren't paragraphs: the index marks the paragraph after each one (`breaks`), and CSS draws the asterisks, so they can't be looked up or counted. Breaks at the start of a chapter, next to a heading or at the end are dropped. The asterisks are kept on the same page as the text after them.
 - Known words per language: the lookup popup has 0 / 1 / 2 / ✓ buttons (✓ = 3, known); each tap records the level and today's date. Settings → Languages imports (merging, newer date wins; or replacing the list with an exact copy of the file) and exports the list as `known-words-<lang>-<date>.json` (`{version, updated, words: {word: [level, date]}}`) via the Android share sheet.
-- Backups, three ways, all made of what can't be rebuilt: the library list, settings, known words and the texts of books made from .txt/.md (`books/`). Dictionaries are downloaded again; EPUBs are found again; indexes, layouts and word counts (`derived/<id>/`) are rebuilt.
+- Backups, three ways, all made of what can't be rebuilt: the library list, settings, known words, the reader's own words and the texts of books made from .txt/.md (`books/`). Dictionaries are downloaded again; EPUBs are found again; indexes, layouts and word counts (`derived/<id>/`) are rebuilt.
   - Settings → Back up library / Restore from backup: one JSON file through the share sheet (`src/backup.ts`).
   - Automatic backups (`src/auto-backup.ts`): the same file, written to a folder the user picks once (any Storage Access Framework folder: phone, SD card, Google Drive…, with a persisted read/write grant, `BackupFolderPlugin.java`), daily or weekly, keeping the newest 5 `temporis-auto-backup-*.json` (other files in the folder are never touched). No background job: one is made when the app starts or returns to the foreground, if due and the backup's contents changed. A failure is toasted once and shown in settings until a backup works again.
   - Android's Auto Backup (Google Drive, nightly, 25 MB per app; over that, nothing is saved) and phone-to-phone transfer, restored on install. `res/xml/data_extraction_rules.xml` (Android 12+) and `backup_rules.xml` (older) include only the paths above; transfers also carry dictionaries. `tests/unit/backup-rules.spec.ts` keeps the two files in step. Test on a phone with Google's `bmgr` scripts (developer.android.com → Test backup and restore).
   - Files describing this install (`auto-backup.json`: the folder; `notices.json`) are in neither backup. After a restore, known words without their dictionary get a one-off "Add <language> again?" notice (`src/missing-dictionaries.ts`).
 - Turning forward after at least 10 s on a page offers to mark that page's words as known: words starting on the page that have a dictionary entry, weren't looked up during the visit, and aren't already known. Lookups reset on every page turn; going back never prompts.
+- My words: selected text can be added to the reader's own dictionary for the language (`src/vocab/user-dictionary.ts`, `user-dictionary/<lang>.json`), kept apart from the downloaded dictionaries, which are never changed. While text that could be a word is selected, an **Add “…” to my words** button takes the page indicator's place (`src/reader/add-word.ts`); a dialog asks for an optional definition of your own. From then on the word is split as one word by every word-splitting option (preferred over jieba's counts), looked up with that definition and pinyin read from its characters (badge "Mine", or CC-CEDICT's entries after it when it has the word too) and tracked like any word; the popup can remove it again. Chinese only for now (`LanguageModule.userWords` / `userWordFrom`; 2–20 Chinese characters).
 - Lookups update a word's level, each with its own setting (Settings → Reading, both on by default): a known (✓) word moves back to 2, and a word not in the list yet starts at 1. Both stamp today. Tapping outside an open popup only closes it.
 
 ## Layout
@@ -53,6 +54,7 @@ src/
   reader/chapter-list.ts    chapter list dialog with known-word percentages
   reader/mark-known.ts      "mark words as known?" prompt on page turns
   reader/word-status.ts     0/1/2/✓ buttons and level changes on lookup
+  reader/add-word.ts        "Add … to my words" for selected text
   reader/language-reminder.ts  "Add <language>?" / unsupported-language notices
   reader/dom-text.ts        text offsets ↔ DOM, CSS highlights
   reader/popup.ts           dictionary popup
@@ -67,6 +69,7 @@ src/
   languages/ja/             Japanese: JMdict (parsing, storage), conjugation rules, popup, detection
   segmentation/             WordSegmenter interface; dictionary-based, word-frequency and Intl (ICU) implementations, unknown-word joiner
   vocab/known-words.ts      known-word levels per language, file format
+  vocab/user-dictionary.ts  the reader's own words per language (on top of the dictionaries)
   vocab/book-stats.ts       known-word percentages per book and chapter
   ui/                       library, book editor and settings screens
 ```
@@ -112,7 +115,7 @@ E2E tests intercept the CC-CEDICT download and serve a small fixture, so they ne
 ### Android tests
 
 `npm run test:android` runs `tests/android` on an emulator: the system file and folder pickers
-(persisted grants for EPUBs and the backup folder), text selection by a real long press, and Android's Auto Backup restore (local
+(persisted grants for EPUBs and the backup folder), text selection by a real long press and a real tap on Add to my words, and Android's Auto Backup restore (local
 transport, as in Google's test script). It builds the debug APK, boots a headless emulator
 (`temporis-test`, created on first run) unless one is already running, drives the app's WebView
 and the system UI with Playwright's Android support, and shuts the emulator down again. About a

@@ -489,6 +489,40 @@ progress {
   display: none;
 }
 
+/* "Add … to my words", in the page indicator's place while text is selected */
+.add-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 0 18px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* A press here mustn't move or clear the selection it adds. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.add-word svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.add-word-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.add-word-word {
+  margin: 0 0 14px;
+  font-size: 1.5rem;
+}
+
 /* Lookup popup */
 .lookup-popup {
   position: absolute;
@@ -575,6 +609,22 @@ progress {
 .zh-pinyin {
   font-size: 1.15rem;
   font-weight: 600;
+}
+.user-word-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .tone-1 { color: var(--tone-1); }
 .tone-2 { color: var(--tone-2); }

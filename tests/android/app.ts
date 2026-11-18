@@ -123,6 +123,17 @@ export class App {
     });
   }
 
+  /**
+   * Screen pixels for a point in the WebView's CSS pixels, for real touches (`input tap`). The
+   * WebView sits below the status bar, so its top left corner is read from the UI.
+   */
+  async screenPoint(x: number, y: number): Promise<{ x: number; y: number }> {
+    // Through Playwright's UI driver: `uiautomator dump` gets nothing once that driver holds the UI.
+    const { bounds } = await this.device.info({ clazz: 'android.webkit.WebView' });
+    const ratio = await this.page.evaluate(() => devicePixelRatio);
+    return { x: bounds.x + Math.round(x * ratio), y: bounds.y + Math.round(y * ratio) };
+  }
+
   async toast(text: string | RegExp): Promise<void> {
     await expect(this.page.locator('#toast.visible')).toHaveText(text);
   }

@@ -143,9 +143,10 @@ test('paginates, turns pages by swipe and keyboard, and crosses chapters', async
   expect(start.total).toBeGreaterThan(2);
   await expect(page.locator('.chapter-title')).toHaveText('第一章 早上');
   await expect(page.locator('.chapter-count')).toHaveText('Chapter 1 of 2');
-  // No page buttons: the bottom bar only shows where you are (and opens the scrubber).
-  await expect(page.locator('.bar.bottom button')).toHaveCount(1);
-  await expect(page.locator('.bar.bottom button')).toHaveAccessibleName('Book position');
+  // No page buttons: the bottom bar only shows where you are (and opens the scrubber), or, while
+  // text is selected, Add to my words (tests/e2e/user-words.spec.ts).
+  await expect(page.locator('.bar.bottom button:not([hidden])')).toHaveCount(1);
+  await expect(page.locator('.bar.bottom button:not([hidden])')).toHaveAccessibleName('Book position');
 
   // Swiping back on the first page of the book stays put.
   await swipe(page, 'right');

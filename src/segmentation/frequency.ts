@@ -11,7 +11,12 @@ export interface FrequencyOptions {
   countAs?(word: string): string | null;
   /** Count for a dictionary word or character the corpus never saw (jieba uses 1). */
   unseen?: number;
+  /** Words to prefer whatever the corpus says (ones the reader added): they cost as little as a very common word. */
+  preferred?(word: string): boolean;
 }
+
+/** A preferred word's probability: about that of 是 or 在 in jieba's counts. */
+const PREFERRED_SHARE = 1 / 100;
 
 /**
  * Weighs a word list's words by how often they occur, for DictionaryWordSegmenter: a word costs
@@ -47,6 +52,7 @@ export class FrequencyWordList implements WordList {
   cost(word: string): number | null {
     const single = word.length === 1 || (word.length === 2 && word.codePointAt(0)! > 0xffff);
     if (!single && !this.words.has(word)) return null;
+    if (this.options.preferred?.(word)) return -Math.log(PREFERRED_SHARE);
     const { counts } = this.frequencies;
     let count = counts.get(word);
     if (count === undefined && this.options.countAs) {

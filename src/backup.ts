@@ -1,6 +1,6 @@
 /**
  * Whole-library backup: one JSON file with the library list (titles, chapters' sources, reading
- * progress), every book's source texts, known-word lists and settings. Derived files (content
+ * progress), every book's source texts, known-word lists, the reader's own words and settings. Derived files (content
  * indexes, word counts) are rebuilt on demand; dictionaries are re-downloaded.
  *
  * Linked files (EPUBs) aren't in the backup, only their reference and checksum: after restoring on
@@ -11,6 +11,7 @@ import { languages } from './languages';
 import { getSettings, type Settings } from './settings';
 import { readText, removeDir, writeJson, writeText } from './storage';
 import { parseKnownWords } from './vocab/known-words';
+import { parseUserDictionary, userDictionaryPath } from './vocab/user-dictionary';
 
 export const BACKUP_APP = 'temporis-reader';
 export const BACKUP_VERSION = 1;
@@ -26,6 +27,8 @@ export interface Backup {
   files: Record<string, string>;
   /** Language id → known-words file text. */
   knownWords: Record<string, string>;
+  /** Language id → the reader's own words (user-dictionary file text). Missing in backups from before 0.19. */
+  userWords?: Record<string, string>;
 }
 
 export async function createBackup(): Promise<Backup> {
@@ -45,6 +48,11 @@ export async function createBackup(): Promise<Backup> {
     const text = await readText(`known-words/${lang.id}.json`);
     if (text !== null) knownWords[lang.id] = text;
   }
+  const userWords: Record<string, string> = {};
+  for (const lang of languages) {
+    const text = await readText(userDictionaryPath(lang.id));
+    if (text !== null) userWords[lang.id] = text;
+  }
   return {
     app: BACKUP_APP,
     backupVersion: BACKUP_VERSION,
@@ -54,6 +62,7 @@ export async function createBackup(): Promise<Backup> {
     library,
     files,
     knownWords,
+    userWords,
   };
 }
 
@@ -86,10 +95,17 @@ export function parseBackup(text: string): Backup {
     if (typeof text !== 'string') throw new Error('The backup’s known words are damaged');
     parseKnownWords(text);
   }
+  if (data.userWords !== undefined) {
+    if (!isObject(data.userWords)) throw new Error('The backup’s own words are damaged');
+    for (const text of Object.values(data.userWords)) {
+      if (typeof text !== 'string') throw new Error('The backup’s own words are damaged');
+      parseUserDictionary(text);
+    }
+  }
   return data as unknown as Backup;
 }
 
-/** Replaces all books, progress, known words and settings with the backup's. Reload the app afterwards. */
+/** Replaces all books, progress, known words, own words and settings with the backup's. Reload the app afterwards. */
 export async function restoreBackup(backup: Backup): Promise<void> {
   await removeDir('books');
   await removeDir('derived');
@@ -101,5 +117,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   await writeJson('library.json', backup.library.map((b) => ({ ...b, contentVersion: (b.contentVersion ?? 0) + 1 })));
   await removeDir('known-words');
   for (const [lang, text] of Object.entries(backup.knownWords)) await writeText(`known-words/${lang}.json`, text);
+  await removeDir('user-dictionary');
+  for (const [lang, text] of Object.entries(backup.userWords ?? {})) {
+    if (/^[a-z-]+$/i.test(lang)) await writeText(userDictionaryPath(lang), text);
+  }
   await writeJson('settings.json', backup.settings ?? {});
 }

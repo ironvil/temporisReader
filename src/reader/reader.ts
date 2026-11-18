@@ -14,6 +14,7 @@ import { getSettings, onSettingsChange } from '../settings';
 import { el, toast } from '../ui/dom';
 import { icon, iconButton } from '../ui/icons';
 import { KNOWN, knownWords, wordsToMarkKnown } from '../vocab/known-words';
+import { openAddWord } from './add-word';
 import { openChapterList } from './chapter-list';
 import { blockOffset, charRange, clearHighlight, highlightsSupported, renderInline, setHighlight } from './dom-text';
 import { remindAboutLanguage } from './language-reminder';
@@ -97,6 +98,11 @@ export class Reader {
   /** Cached per layout (chapter + page size + text size). */
   private cachedCharsPerPage: number | null = null;
   private unsubscribeKnown: (() => void) | null = null;
+  private unsubscribeUserWords: (() => void) | null = null;
+  /** Takes the page indicator's place while selected text can be added as a word. */
+  private readonly addWordButton: HTMLButtonElement;
+  /** The word the selected text would be added as, or null. */
+  private selectedWord: string | null = null;
   /** A move to a chapter that is still loading (big books load in the background), done when it arrives. */
   private waitingFor: (() => void) | null = null;
 
@@ -123,6 +129,15 @@ export class Reader {
       ),
     ) as HTMLButtonElement;
     this.indicator = indicator;
+    this.addWordButton = el('button', { type: 'button', class: 'add-word', hidden: true }) as HTMLButtonElement;
+    // On pointerdown, before the press can clear the selection (and hide the button); click is the keyboard's.
+    this.addWordButton.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.addSelectedWord();
+    });
+    this.addWordButton.addEventListener('click', (e) => {
+      if (e.detail === 0) this.addSelectedWord();
+    });
     indicator.addEventListener('click', () => this.scrubber.toggle());
     this.scrubber = new BookScrubber(
       {
@@ -148,8 +163,9 @@ export class Reader {
         iconButton('settings', 'Settings', () => callbacks.onOpenSettings()),
       ),
       pageWrap,
-      el('footer', { class: 'bar bottom' }, indicator),
+      el('footer', { class: 'bar bottom' }, indicator, this.addWordButton),
     );
+    document.addEventListener('selectionchange', () => this.updateAddWord());
 
     this.bindGestures();
     new ResizeObserver(() => this.scheduleRelayout()).observe(this.area);
@@ -180,6 +196,7 @@ export class Reader {
       const store = knownWords(this.lang.id);
       this.unsubscribeKnown = store.onChange(() => this.refreshWordHighlights());
       void store.load();
+      this.unsubscribeUserWords = this.lang.userWords?.onChange(() => this.refreshWordHighlights()) ?? null;
     }
     this.bookTitle.textContent = book.meta.title;
 
@@ -264,6 +281,10 @@ export class Reader {
     this.setLoading(false);
     this.unsubscribeKnown?.();
     this.unsubscribeKnown = null;
+    this.unsubscribeUserWords?.();
+    this.unsubscribeUserWords = null;
+    this.clearSelection();
+    this.updateAddWord();
     this.clearWordHighlights();
     this.scrubber.reset();
     const saved = this.flush();
@@ -693,6 +714,32 @@ export class Reader {
 
   private clearSelection(): void {
     if (this.hasSelection()) document.getSelection()?.removeAllRanges();
+  }
+
+  /** Shows "Add … to my words" in place of the page indicator while selected text could be a word. */
+  private updateAddWord(): void {
+    const lang = this.lang;
+    const text = this.book && !this.root.hidden && this.hasSelection() ? document.getSelection()!.toString() : '';
+    const word = text && lang?.userWords && lang.userWordFrom ? lang.userWordFrom(text) : null;
+    if (word === this.selectedWord) return;
+    this.selectedWord = word;
+    this.indicator.hidden = word !== null;
+    this.addWordButton.hidden = word === null;
+    if (word === null) return;
+    const has = lang!.userWords!.has(word);
+    this.addWordButton.replaceChildren(
+      icon(has ? 'edit' : 'plus'),
+      el('span', { class: 'add-word-label' }, has ? 'Change ' : 'Add ', el('span', { class: 'add-word-text', lang: lang!.htmlLang }, `“${word}”`), has ? '' : ' to my words'),
+    );
+  }
+
+  private addSelectedWord(): void {
+    const word = this.selectedWord;
+    if (!word || !this.lang) return;
+    openAddWord(this.lang, word, () => {
+      this.clearSelection();
+      this.updateAddWord();
+    });
   }
 
   // ── Lookup ───────────────────────────────────────────────────────────────

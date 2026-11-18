@@ -24,6 +24,12 @@ export function fakeCedict(): Buffer {
     '實在 实在 [shi2 zai4] /really; actually/',
     '確實 确实 [que4 shi2] /indeed/',
     '在理 在理 [zai4 li3] /reasonable/',
+    // A name's characters: 德拉科尼娅 (Draconia) isn't a word until the reader adds it.
+    '德 德 [de2] /virtue/',
+    '拉 拉 [la1] /to pull/',
+    '科 科 [ke1] /branch of study/',
+    '尼 尼 [ni2] /Buddhist nun/',
+    '婭 娅 [ya4] /(used in female names)/',
     '了 了 [le5] /' + Array.from({ length: 30 }, (_, i) => `long definition number ${i + 1} to make the popup overflow`).join('/') + '/',
   ];
   for (let i = 0; i < 1100; i++) lines.push(`測${i} 测${i} [ce4] /filler ${i}/`);

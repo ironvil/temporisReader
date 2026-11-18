@@ -1,8 +1,9 @@
 /**
  * The ways Chinese text can be split into words, chosen in Settings → Languages → Chinese.
  * To add one, add an entry to CHINESE_SEGMENTERS: the settings page lists them all, and the
- * language module builds whichever is chosen. Words must be CC-CEDICT words (or single
- * characters) so that every word can be looked up; only the unknown-word joiner makes others.
+ * language module builds whichever is chosen. Words must be CC-CEDICT words, words the reader
+ * added, or single characters, so that every word can be looked up; only the unknown-word joiner
+ * makes others.
  */
 import { DictionaryWordSegmenter, type WordList } from '../../segmentation/dictionary';
 import { FrequencyWordList } from '../../segmentation/frequency';
@@ -23,6 +24,8 @@ export interface ChineseSegmentationData {
   readonly dictionary: ChineseWords;
   /** jieba's word counts and unknown-word model; null when not loaded (or it failed to load). */
   readonly jieba: { readonly words: WordCounts; readonly hmm: HmmModel } | null;
+  /** Words the reader added (in `dictionary` too): always preferred, whatever jieba's counts say. */
+  isUserWord?(word: string): boolean;
 }
 
 export interface ChineseSegmenterOption {
@@ -47,9 +50,9 @@ export function keptApart(words: WordCounts): Set<string> {
 }
 
 /** CC-CEDICT words weighed by jieba's counts: the lowest total cost is the most likely split. */
-function mostLikely({ dictionary, jieba }: ChineseSegmentationData, fallback: WordSegmenter): WordSegmenter | null {
+function mostLikely({ dictionary, jieba, isUserWord }: ChineseSegmentationData, fallback: WordSegmenter): WordSegmenter | null {
   if (!jieba) return null;
-  const weighed = new FrequencyWordList(dictionary, jieba.words, { countAs: (w) => dictionary.simplifiedOf(w) });
+  const weighed = new FrequencyWordList(dictionary, jieba.words, { countAs: (w) => dictionary.simplifiedOf(w), preferred: isUserWord });
   return new DictionaryWordSegmenter(weighed, HAN_RUN, fallback);
 }
 
