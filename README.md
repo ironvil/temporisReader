@@ -123,6 +123,11 @@ and the system UI with Playwright's Android support, and shuts the emulator down
 minute; `-- --if-affected` skips the run unless Android-related files changed since `main`, and
 `-- --no-build` reuses the last APK. Real phones are never used (the tests uninstall the app).
 
+The runner can't hang: every adb call times out, a snapshot that boots wedged (booted, but commands
+hang) is retried with a cold boot, only one run goes at a time (`test-results/android-test.lock`),
+and if the tests haven't started within 10 minutes (`TEMPORIS_ANDROID_STARTUP_MINUTES`) a watchdog
+stops the run and its emulator.
+
 One-off setup: `sdkmanager "emulator" "system-images;android-36.1;google_apis;x86_64"` (on Windows
 `android-36` instead: 36.1's display server keeps crashing there), plus hardware acceleration (KVM
 on Linux; on Windows, SVM/VT-x in the firmware and the Windows Hypervisor Platform feature).
