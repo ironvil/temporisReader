@@ -30,8 +30,8 @@ async function editFile(page: Page): Promise<void> {
   await withStorage(page, async (s) => {
     const key = (await s.keys()).find((k) => k.startsWith('/DATA/device-files/') && k.endsWith('.epub'))!;
     const entry = await s.get(key);
-    const bytes = new Uint8Array(await (entry.content as Blob).arrayBuffer());
-    await s.put({ ...entry, content: new Blob([bytes, new Uint8Array([1, 2, 3])]) });
+    // Stored as base64 (src/storage.ts).
+    await s.put({ ...entry, content: btoa(atob(entry.content as string) + '') });
   }, null);
 }
 

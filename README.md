@@ -145,8 +145,15 @@ Share → Add to Home Screen gives a full-screen app that opens offline (a servi
   exports use the browser's share sheet where there is one (iOS: Save to Files).
 - **Updates** download in the background and take over the next time the app is hidden.
 
-One-time setup: Settings → Pages → Source: GitHub Actions. `tests/web-app` checks the build (the
-`web-app` Playwright project, served from `dist-web/`).
+One-time setup: Settings → Pages → Source: GitHub Actions. `tests/web-app` checks the build in
+Chromium and in WebKit, Safari's engine (the `web-app` and `web-app-safari` Playwright projects,
+served from `dist-web/`; `npx playwright install webkit` once). `SAFARI=all npm test` also runs
+every e2e test in WebKit; some of those fail for test reasons (no mouse wheel in mobile WebKit,
+timing), not app ones.
+
+Safari quirks handled: its IndexedDB refuses Blobs, so files are stored as base64 on the web too
+(`src/storage.ts`), and downloads on the web are a plain `fetch` (FileTransfer's web version also
+clicks a download link, which Safari opens in a window).
 
 ## Parser version
 

@@ -14,22 +14,48 @@ export async function downloadToFile(
   path: string,
   onProgress?: (p: DownloadProgress) => void,
 ): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return fetchToFile(url, path, onProgress);
   const listener = await FileTransfer.addListener('progress', (s) => {
     if (s.url === url) onProgress?.({ bytes: s.bytes, total: s.lengthComputable ? s.contentLength : 0 });
   });
   try {
-    if (Capacitor.isNativePlatform()) {
-      const dir = path.split('/').slice(0, -1).join('/');
-      if (dir) await ensureDir(dir);
-      await FileTransfer.downloadFile({ url, path: await fileUri(path), progress: true });
-    } else {
-      const { blob } = await FileTransfer.downloadFile({ url, path, progress: true });
-      if (!blob) throw new Error('Download returned no data');
-      await writeBlob(path, blob);
-    }
+    const dir = path.split('/').slice(0, -1).join('/');
+    if (dir) await ensureDir(dir);
+    await FileTransfer.downloadFile({ url, path: await fileUri(path), progress: true });
   } finally {
     await listener.remove();
   }
+}
+
+/**
+ * Web: a plain fetch. (FileTransfer's web version also clicks a download link for the file, which
+ * Safari opens in a window of its own.)
+ */
+async function fetchToFile(url: string, path: string, onProgress?: (p: DownloadProgress) => void): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+  const total = Number(res.headers.get('content-length')) || 0;
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  let reported = 0;
+  if (res.body) {
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      bytes += value.length;
+      // At most every 100 ms, as FileTransfer does: each report redraws the language's settings.
+      if (Date.now() - reported >= 100) {
+        reported = Date.now();
+        onProgress?.({ bytes, total });
+      }
+    }
+  } else {
+    chunks.push(new Uint8Array(await res.arrayBuffer()));
+  }
+  onProgress?.({ bytes, total });
+  await writeBlob(path, new Blob(chunks as BlobPart[]));
 }
 
 /** Decompresses gzip data (checked by magic bytes) and decodes as UTF-8. Plain text passes through. */

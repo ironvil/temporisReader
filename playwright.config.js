@@ -18,6 +18,11 @@ export default defineConfig({
   projects: [
     { name: 'mobile-chrome', testIgnore: ['android/**', 'web-app/**'], use: { ...devices['Pixel 7'], baseURL: `http://localhost:${PORT}` } },
     { name: 'web-app', testDir: './tests/web-app', use: { ...devices['Pixel 7'], baseURL: `http://localhost:${WEB_APP_PORT}` } },
+    // Safari's engine, as on iPhones (npx playwright install webkit). SAFARI=all runs every test in it.
+    { name: 'web-app-safari', testDir: './tests/web-app', use: { ...devices['iPhone 13'], baseURL: `http://localhost:${WEB_APP_PORT}` } },
+    ...(process.env.SAFARI === 'all'
+      ? [{ name: 'safari', testIgnore: ['android/**', 'web-app/**', 'unit/**'], use: { ...devices['iPhone 13'], baseURL: `http://localhost:${PORT}` } }]
+      : []),
   ],
   webServer: [
     // The production web build, served the same way Capacitor bundles it.

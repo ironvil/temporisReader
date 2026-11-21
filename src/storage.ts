@@ -65,10 +65,16 @@ export async function readStream(path: string): Promise<{ stream: ReadableStream
   }
 }
 
-/** Writes binary data. Native goes over the bridge as base64; web stores the Blob directly. */
+/**
+ * Writes binary data, as base64: over the bridge on native, and on the web too, because Safari's
+ * IndexedDB refuses Blobs ("Error preparing Blob/File data to be stored in object store"). Reads
+ * accept both, so Blobs stored by earlier web builds still read back.
+ */
 export async function writeBytes(path: string, bytes: Uint8Array): Promise<void> {
-  const blob = new Blob([bytes as BlobPart]);
-  if (!Capacitor.isNativePlatform()) return writeBlob(path, blob);
+  await writeBlob(path, new Blob([bytes as BlobPart]));
+}
+
+export async function writeBlob(path: string, blob: Blob): Promise<void> {
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1));
@@ -76,11 +82,6 @@ export async function writeBytes(path: string, bytes: Uint8Array): Promise<void>
     reader.readAsDataURL(blob);
   });
   await Filesystem.writeFile({ path, directory, data: base64, recursive: true });
-}
-
-/** Web only: Filesystem's web implementation stores Blobs directly. */
-export async function writeBlob(path: string, blob: Blob): Promise<void> {
-  await Filesystem.writeFile({ path, directory, data: blob, recursive: true });
 }
 
 export async function ensureDir(path: string): Promise<void> {
