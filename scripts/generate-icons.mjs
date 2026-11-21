@@ -75,5 +75,17 @@ for (const [dir, [w, h]] of Object.entries(splashes)) {
 mkdirSync(join(root, 'public'), { recursive: true });
 writeFileSync(join(root, 'public/favicon.svg'), svgDoc(108, 108, '18 18 72 72', `<rect x="18" y="18" width="72" height="72" rx="16" fill="${background}"/>${foreground}`).replace(' style="display:block"', ''));
 
+// Web app (Add to Home Screen, manifest): full-bleed squares; iOS and Android round them.
+// 192/512 show the 72-unit art area; the maskable one the whole 108-unit canvas (the safe circle).
+const square = `<rect x="-2000" y="-2000" width="4000" height="4000" fill="${background}"/>${foreground}`;
+for (const [name, size, viewBox] of [
+  ['apple-touch-icon.png', 180, '18 18 72 72'],
+  ['icon-192.png', 192, '18 18 72 72'],
+  ['icon-512.png', 512, '18 18 72 72'],
+  ['icon-maskable-512.png', 512, '0 0 108 108'],
+]) {
+  await render(svgDoc(size, size, viewBox, square), size, size, join(root, 'public/icons', name));
+}
+
 await browser.close();
 console.log('Icons written.');

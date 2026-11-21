@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 4173;
+/** The installable web version (npm run build:web, src/web-app.ts). */
+const WEB_APP_PORT = 4174;
 
 export default defineConfig({
   testDir: './tests',
@@ -11,16 +13,23 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
   },
   projects: [
-    { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
+    { name: 'mobile-chrome', testIgnore: ['android/**', 'web-app/**'], use: { ...devices['Pixel 7'], baseURL: `http://localhost:${PORT}` } },
+    { name: 'web-app', testDir: './tests/web-app', use: { ...devices['Pixel 7'], baseURL: `http://localhost:${WEB_APP_PORT}` } },
   ],
-  // Test the production web build, served the same way Capacitor bundles it.
-  webServer: {
-    command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    // The production web build, served the same way Capacitor bundles it.
+    {
+      command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
+      url: `http://localhost:${PORT}`,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: `npm run build:web && npx vite preview --outDir dist-web --port ${WEB_APP_PORT} --strictPort`,
+      url: `http://localhost:${WEB_APP_PORT}`,
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 });

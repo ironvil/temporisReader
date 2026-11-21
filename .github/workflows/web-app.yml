@@ -1,0 +1,42 @@
+# Publishes the web version (npm run build:web, src/web-app.ts) to GitHub Pages, with fresh
+# copies of the dictionaries it serves itself. Weekly too, so those copies stay current.
+# One-time setup: Settings → Pages → Source: GitHub Actions.
+name: Web app
+
+on:
+  push:
+    # web-app: while the web version is being tried out on its branch. Pages only deploys from
+    # branches allowed in Settings → Environments → github-pages.
+    branches: [main, web-app]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web -- --dictionaries
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+      - id: deployment
+        uses: actions/deploy-pages@v4

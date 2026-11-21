@@ -17,6 +17,7 @@ import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings
 import { knownWords, parseKnownWords, today } from '../vocab/known-words';
 import { el, formatBytes, toast } from './dom';
 import { icon, iconButton } from './icons';
+import { WEB_APP } from '../web-app';
 
 /**
  * Settings, as two levels: the main page (reading options, a list of languages, backup) and one
@@ -103,7 +104,7 @@ export class SettingsView {
       el('div', { class: 'card lang-list' }, ...rows),
       el('h2', {}, 'Backup'),
       this.backupCard(),
-      await this.autoBackupCard(),
+      ...(WEB_APP ? [] : [await this.autoBackupCard()]),
       el('h2', {}, 'About'),
       el('div', { class: 'card muted' }, `Temporis Reader ${__APP_VERSION__}`),
     ];
@@ -121,7 +122,8 @@ export class SettingsView {
       });
       const added = (await Promise.all(lang.dictionaries.map((d) => d.state()))).every((s) => s.installed);
       const known = store.size ? ` · ${store.counts()[3].toLocaleString()} known words` : '';
-      status.textContent = busy ? 'Adding…' : added ? `Added${known}` : `Not added${known}`;
+      const unavailable = !added && lang.dictionaries.some((d) => d.unavailable);
+      status.textContent = busy ? 'Adding…' : added ? `Added${known}` : unavailable ? `Not in the web version yet${known}` : `Not added${known}`;
     };
     await refresh();
     // An install keeps going after leaving the language's page; report how it ends from here too.
@@ -184,6 +186,9 @@ export class SettingsView {
       'div',
       { class: 'card', 'data-backup': '' },
       el('p', { class: 'muted' }, 'One file with your books, chapters, reading progress, known words and settings. Dictionaries aren’t included: add your languages again after restoring on a new install.'),
+      WEB_APP
+        ? el('p', { class: 'setting-help' }, 'Your library is kept in this browser only, and is lost if its website data is cleared. Save a backup now and then.')
+        : null,
       el('div', { class: 'actions' }, backupButton, restoreButton, fileInput),
     );
   }
@@ -346,6 +351,7 @@ export class SettingsView {
         return p && (p.phase === 'downloading' || p.phase === 'processing');
       });
       const added = states.every((s) => s.installed);
+      const unavailable = lang.dictionaries.find((d) => d.unavailable)?.unavailable;
 
       action.replaceChildren();
       if (active) {
@@ -363,6 +369,9 @@ export class SettingsView {
           status.textContent = `Preparing ${active.name}…`;
           bar.removeAttribute('value');
         }
+      } else if (unavailable && !added) {
+        bar.hidden = true;
+        status.textContent = unavailable;
       } else {
         bar.hidden = true;
         const size = lang.dictionaries.map((d) => d.downloadSize).join(' + ');

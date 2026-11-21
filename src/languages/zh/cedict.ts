@@ -4,6 +4,7 @@ import { readBytes } from '../../storage';
 import { DownloadedDictionary, type Processed } from '../downloaded-dictionary';
 import { buildCedictIndex, lookupCedict, simplifiedOf, type CedictEntry, type CedictIndex } from './cedict-parse';
 import type { ChineseWords } from './segmenters';
+import { dictionaryUrl } from '../../web-app';
 
 export const CEDICT_URL = 'https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz';
 
@@ -25,7 +26,7 @@ export class CedictDictionary extends DownloadedDictionary<CedictIndex> implemen
    */
   onDecode: ((index: CedictIndex) => Promise<void>) | null = null;
 
-  constructor(url = CEDICT_URL) {
+  constructor(url = dictionaryUrl(CEDICT_URL, 'cc-cedict.txt.gz')) {
     super(url, { data: 'dictionaries/cc-cedict.txt.gz', meta: 'dictionaries/cc-cedict.json', download: 'dictionaries/cc-cedict.download.gz' });
   }
 

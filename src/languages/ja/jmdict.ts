@@ -8,6 +8,7 @@ import { readStream } from '../../storage';
 import { DownloadedDictionary, type Processed } from '../downloaded-dictionary';
 import { deinflect, matchesPos, VS } from './deinflect';
 import { JmdictIndex, JmdictParser, type JmdictEntry } from './jmdict-data';
+import { dictionaryUrl } from '../../web-app';
 
 export const JMDICT_URL = 'https://www.edrdg.org/pub/Nihongo/JMdict_e.gz';
 
@@ -43,7 +44,7 @@ export class JmdictDictionary extends DownloadedDictionary<JmdictIndex> implemen
   private readonly words = new Map<string, { base: string; common: boolean } | null>();
   private wordsRevision = -1;
 
-  constructor(url = JMDICT_URL) {
+  constructor(url = dictionaryUrl(JMDICT_URL, 'jmdict.gz')) {
     super(url, { data: 'dictionaries/jmdict.txt.gz', meta: 'dictionaries/jmdict.json', download: 'dictionaries/jmdict.download.gz' });
   }
 

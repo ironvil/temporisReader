@@ -9,6 +9,7 @@ import { forEachLine, gunzipBytes, gzipBytes } from '../../download';
 import { readStream } from '../../storage';
 import { DownloadedDictionary, type Processed } from '../downloaded-dictionary';
 import { sortLines, trimEntry, WiktionaryIndex, type WiktionaryEntry } from './data';
+import { NOT_IN_WEB_APP, WEB_APP } from '../../web-app';
 
 /** Sanity check so a captive-portal page or truncated file isn't installed as a dictionary. */
 export const MIN_ENTRIES = 1000;
@@ -39,6 +40,8 @@ export class WiktionaryDictionary extends DownloadedDictionary<WiktionaryIndex> 
   readonly license = 'CC BY-SA 4.0, Wiktionary contributors';
   readonly homepage: string;
   readonly code: string;
+  /** kaikki.org doesn't allow downloads from web pages, and the files are too big to copy. */
+  readonly unavailable = WEB_APP ? NOT_IN_WEB_APP : null;
 
   constructor(config: WiktionaryConfig) {
     const base = `dictionaries/wiktionary-${config.code}`;

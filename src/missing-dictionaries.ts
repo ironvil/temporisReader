@@ -29,6 +29,7 @@ async function languagesToMention(shown: string[]): Promise<LanguageModule[]> {
     await store.load();
     if (!store.size) continue;
     const states = await Promise.all(lang.dictionaries.map((d) => d.state()));
+    if (lang.dictionaries.some((d) => d.unavailable)) continue; // can't be added here (web version)
     if (!states.every((s) => s.installed)) missing.push(lang);
   }
   return missing;

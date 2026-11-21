@@ -102,6 +102,7 @@ npm run typecheck  # tsc
 npm test           # unit + Playwright e2e tests against the production web build
 npm run test:ui    # same, in Playwright's interactive UI
 npm run test:android  # Android tests on an emulator (see below)
+npm run build:web  # the web version (see below) -> dist-web/; add -- --dictionaries for its dictionary copies
 npm run apk        # build + cap sync + debug APK -> android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -126,6 +127,26 @@ One-off setup: `sdkmanager "emulator" "system-images;android-36.1;google_apis;x8
 `android-36` instead: 36.1's display server keeps crashing there), plus hardware acceleration (KVM
 on Linux; on Windows, SVM/VT-x in the firmware and the Windows Hypervisor Platform feature).
 Playwright's Android driver is installed by the script.
+
+## Web version
+
+For iPhones and iPads without the App Store: the same app, built with `npm run build:web` and
+published to GitHub Pages by `.github/workflows/web-app.yml` (on push, and weekly). In Safari,
+Share → Add to Home Screen gives a full-screen app that opens offline (a service worker,
+`web/sw.js`, keeps the app's files). `src/web-app.ts` holds what differs from the APK:
+
+- **Dictionaries**: MDBG, EDRDG and kaikki.org don't send CORS headers, so a web page can't download
+  from them. The workflow puts copies of CC-CEDICT and JMdict (CC BY-SA, credited in
+  `dictionaries/README.txt`) next to the app, and the web version downloads those. The Wiktionary
+  languages aren't offered yet: their files are too big to copy (French alone is 60 MB).
+- **Books** are always copied in (a browser can't keep a link to a file), as in the test build.
+- **Storage** is the browser's (IndexedDB), and is lost if its website data is cleared. The app asks
+  for persistent storage. There are no automatic backups, so Settings says to save backups by hand;
+  exports use the browser's share sheet where there is one (iOS: Save to Files).
+- **Updates** download in the background and take over the next time the app is hidden.
+
+One-time setup: Settings → Pages → Source: GitHub Actions. `tests/web-app` checks the build (the
+`web-app` Playwright project, served from `dist-web/`).
 
 ## Parser version
 

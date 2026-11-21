@@ -12,6 +12,7 @@ import { LibraryView } from './ui/library-view';
 import { mentionMissingDictionaries } from './missing-dictionaries';
 import { showLinkedFileDialog } from './ui/linked-file-dialog';
 import { SettingsView } from './ui/settings-view';
+import { startWebApp, WEB_APP } from './web-app';
 
 async function main() {
   await loadSettings();
@@ -85,6 +86,7 @@ async function main() {
   });
   void App.addListener('pause', () => void reader.flush());
   const autoBackup = async () => {
+    if (WEB_APP) return; // no folder to back up to (src/web-app.ts)
     const result = await runAutoBackup();
     // Shown once when backups start failing; settings shows the problem until one works again.
     if (result.status === 'failed' && result.firstFailure) toast(`Automatic backup failed: ${result.error.message}. See Settings → Backup.`);
@@ -94,6 +96,7 @@ async function main() {
     else void autoBackup();
   });
 
+  startWebApp(() => reader.flush());
   show('library');
   await library.refresh();
   document.body.dataset.ready = 'true';

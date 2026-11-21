@@ -52,6 +52,8 @@ export interface Dictionary {
   downloadSize: string;
   license: string;
   homepage: string;
+  /** Set when the dictionary can't be added here (the web version), saying why. */
+  unavailable?: string | null;
 
   state(): Promise<DictionaryState>;
   /** Downloads and installs (or updates). Concurrent calls share one download. */

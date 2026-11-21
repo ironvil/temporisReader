@@ -15,7 +15,8 @@ export PATH=~/.local/opt/node/bin:$JAVA_HOME/bin:$PATH
 ## Checks
 
 - `npm run setup:test-books` once per checkout (downloads the test EPUBs; they're git-ignored).
-- `npm run typecheck` and `npm test` (unit + web e2e, ~15 s) for every change.
+- `npm run typecheck` and `npm test` (unit + web e2e + the web version's checks in tests/web-app, ~45 s)
+  for every change.
 - `npm run check:parser-version` when `packages/book-parser` changed: bump `PARSER_VERSION` if
   books could get different paragraphs, headings or chapters (README → Parser version).
 - **Android tests** (`npm run test:android`, tests/android): an emulator, about a minute with the
