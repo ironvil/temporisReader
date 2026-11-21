@@ -20,6 +20,7 @@ import { blockOffset, charRange, clearHighlight, highlightsSupported, renderInli
 import { remindAboutLanguage } from './language-reminder';
 import { MIN_PAGE_DWELL_MS, offerMarkKnown } from './mark-known';
 import { LookupPopup } from './popup';
+import { formatDuration, MIN_SAMPLE_MS, readingSpeed } from './reading-speed';
 import { globalOffset, guessCharsPerPage, locateOffset, type Located } from './scrub';
 import { BookScrubber } from './scrubber';
 import { statusButtons, updateLevelOnLookup } from './word-status';
@@ -89,6 +90,14 @@ export class Reader {
   /** When the current page was turned to, and the words looked up on it since. */
   private pageShownAt = Date.now();
   private readonly pageLookups = new Set<string>();
+  /** Reading time on the current page so far, not counting time with the app in the background. */
+  private pageReadMs = 0;
+  /** Since when the current page has been in front (null while the app is in the background). */
+  private pageReadSince: number | null = Date.now();
+  /** Time left at the reader's speed, either side of the page indicator. */
+  private readonly chapterLeft: HTMLElement;
+  private readonly bookLeft: HTMLElement;
+  private unsubscribeSpeed: (() => void) | null = null;
   private gesture: Gesture | null = null;
   private layoutSize = '';
   private relayoutTimer: number | undefined;
@@ -130,6 +139,10 @@ export class Reader {
     ) as HTMLButtonElement;
     this.indicator = indicator;
     this.addWordButton = el('button', { type: 'button', class: 'add-word', hidden: true }) as HTMLButtonElement;
+    const timeLeft = (where: string) =>
+      el('div', { class: 'time-left empty', 'data-time-left': where, 'aria-live': 'off' }, el('span', { class: 'time-left-value' }), el('span', { class: 'time-left-label' }, `left in ${where}`));
+    this.chapterLeft = timeLeft('chapter');
+    this.bookLeft = timeLeft('book');
     // On pointerdown, before the press can clear the selection (and hide the button); click is the keyboard's.
     this.addWordButton.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -163,9 +176,14 @@ export class Reader {
         iconButton('settings', 'Settings', () => callbacks.onOpenSettings()),
       ),
       pageWrap,
-      el('footer', { class: 'bar bottom' }, indicator, this.addWordButton),
+      el('footer', { class: 'bar bottom' }, this.chapterLeft, indicator, this.addWordButton, this.bookLeft),
     );
     document.addEventListener('selectionchange', () => this.updateAddWord());
+    // Time in the background isn't reading time.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.pauseReadingTime();
+      else this.pageReadSince ??= Date.now();
+    });
 
     this.bindGestures();
     new ResizeObserver(() => this.scheduleRelayout()).observe(this.area);
@@ -197,6 +215,9 @@ export class Reader {
       this.unsubscribeKnown = store.onChange(() => this.refreshWordHighlights());
       void store.load();
       this.unsubscribeUserWords = this.lang.userWords?.onChange(() => this.refreshWordHighlights()) ?? null;
+      const speed = readingSpeed(this.lang.id);
+      this.unsubscribeSpeed = speed.onChange(() => this.updateTimeLeft());
+      void speed.load();
     }
     this.bookTitle.textContent = book.meta.title;
 
@@ -214,6 +235,7 @@ export class Reader {
           if (this.book !== book) return;
           this.setLoading(false);
           this.root.dataset.complete = 'true';
+          this.updateTimeLeft();
           // The book turned out different from what was shown: start again from its saved place.
           if (!same) this.showSavedPlace(book);
         },
@@ -283,6 +305,8 @@ export class Reader {
     this.unsubscribeKnown = null;
     this.unsubscribeUserWords?.();
     this.unsubscribeUserWords = null;
+    this.unsubscribeSpeed?.();
+    this.unsubscribeSpeed = null;
     this.clearSelection();
     this.updateAddWord();
     this.clearWordHighlights();
@@ -327,6 +351,7 @@ export class Reader {
     if (this.page === this.pageCount - 1 && !this.chapterReady(this.chapterIndex + 1, () => this.next())) return;
     // Collect before the page changes (the next chapter replaces the DOM).
     const unlooked = this.unlookedWordsOnLeavingPage();
+    this.recordPageRead();
     if (this.page < this.pageCount - 1) this.setPage(this.page + 1, true);
     else {
       this.renderChapter(this.chapterIndex + 1);
@@ -394,6 +419,65 @@ export class Reader {
   private startPageVisit(): void {
     this.pageShownAt = Date.now();
     this.pageLookups.clear();
+    this.pageReadMs = 0;
+    this.pageReadSince = document.hidden ? null : Date.now();
+  }
+
+  // ── Reading speed (reading-speed.ts) ─────────────────────────────────────
+
+  private pauseReadingTime(): void {
+    if (this.pageReadSince !== null) this.pageReadMs += Date.now() - this.pageReadSince;
+    this.pageReadSince = null;
+  }
+
+  private readingTimeOnPage(): number {
+    return this.pageReadMs + (this.pageReadSince === null ? 0 : Date.now() - this.pageReadSince);
+  }
+
+  /** Offset in the book's text where `page` of this chapter starts. */
+  private pageStart(page: number): number {
+    const position = this.firstPositionOnPage(page);
+    return globalOffset(this.book!.index, this.chapterIndex, position.paragraph, position.char);
+  }
+
+  /** Offset in the book's text where this chapter ends, or NaN while the next one is still loading. */
+  private chapterEnd(): number {
+    const book = this.book!;
+    return this.chapterIndex + 1 < book.index.chapters.length ? globalOffset(book.index, this.chapterIndex + 1, 0, 0) : book.content.length;
+  }
+
+  /** Keeps the page being turned past as a reading-speed sample, if it was read and was a full page. */
+  private recordPageRead(): void {
+    const lang = this.lang;
+    const ms = this.readingTimeOnPage();
+    if (!lang || !this.book || ms < MIN_SAMPLE_MS) return;
+    const start = this.pageStart(this.page);
+    const chars = (this.page < this.pageCount - 1 ? this.pageStart(this.page + 1) : this.chapterEnd()) - start;
+    // A chapter's last page or a title page says little about speed.
+    if (!Number.isFinite(chars) || chars < this.charsPerPage() * 0.6) return;
+    const letters = this.book.content.slice(start, start + chars).match(/[\p{L}\p{N}]/gu)?.length ?? 0;
+    const words = lang.ready() ? this.wordsOnPage(this.page, lang).length : null;
+    void readingSpeed(lang.id).record({ at: Date.now(), chars, letters, words, ms });
+  }
+
+  /** "12 min left in chapter" and "5 h left in book", once there's a reading speed. */
+  private updateTimeLeft(): void {
+    const book = this.book;
+    const speed = this.lang && book ? readingSpeed(this.lang.id).speed() : null;
+    const show = (box: HTMLElement, chars: number | null) => {
+      const ok = speed !== null && chars !== null && Number.isFinite(chars) && chars >= 0;
+      box.classList.toggle('empty', !ok);
+      box.querySelector('.time-left-value')!.textContent = ok ? formatDuration(chars / speed.charsPerMinute) : '';
+    };
+    if (!book || !speed) {
+      show(this.chapterLeft, null);
+      show(this.bookLeft, null);
+      return;
+    }
+    const here = this.pageStart(this.page);
+    show(this.chapterLeft, this.chapterEnd() - here);
+    // Until a big book has finished loading, its length isn't known.
+    show(this.bookLeft, book.complete || this.root.dataset.complete === 'true' ? book.content.length - here : null);
   }
 
   /**
@@ -489,6 +573,7 @@ export class Reader {
     this.pageCountEl.textContent = `${this.page + 1} / ${this.pageCount}`;
     this.chapterCountEl.textContent = chapters.length > 1 ? `Chapter ${this.chapterIndex + 1} of ${chapters.length}` : '';
     this.chapterTitle.textContent = chapters.length > 1 ? chapters[this.chapterIndex].title : '';
+    this.updateTimeLeft();
   }
 
   // ── Rendering & pagination ───────────────────────────────────────────────
@@ -724,6 +809,7 @@ export class Reader {
     if (word === this.selectedWord) return;
     this.selectedWord = word;
     this.indicator.hidden = word !== null;
+    this.chapterLeft.hidden = this.bookLeft.hidden = word !== null;
     this.addWordButton.hidden = word === null;
     if (word === null) return;
     const has = lang!.userWords!.has(word);

@@ -13,5 +13,6 @@
     <include domain="file" path="settings.json" />
     <include domain="file" path="known-words/" />
     <include domain="file" path="user-dictionary/" />
+    <include domain="file" path="reading-speed/" />
     <include domain="file" path="books/" />
 </full-backup-content>

@@ -403,7 +403,8 @@ progress {
   color: var(--accent-fg);
 }
 .page-indicator {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   align-self: stretch;
   border: 0;
   background: none;
@@ -415,6 +416,43 @@ progress {
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+/* Time left in the chapter and the book, either side of the page indicator (reading speed). */
+.time-left {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.time-left[data-time-left='chapter'] {
+  align-items: flex-start;
+  padding-left: 8px;
+}
+.time-left[data-time-left='book'] {
+  align-items: flex-end;
+  padding-right: 8px;
+  text-align: right;
+}
+.time-left.empty {
+  visibility: hidden;
+}
+.time-left-value {
+  color: var(--fg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.time-left-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.time-left[hidden] {
+  display: none;
 }
 .indicator-pill {
   display: inline-flex;

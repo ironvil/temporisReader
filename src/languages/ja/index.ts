@@ -97,6 +97,7 @@ export class JapaneseLanguage implements LanguageModule<JapaneseLookup> {
   readonly name = 'Japanese';
   readonly nativeName = '日本語';
   readonly htmlLang = 'ja';
+  readonly charactersPerMinute = true;
   readonly sampleText = '朝の光が高い窓から差し込んで、机の上を静かに照らしていた。';
   readonly jmdict: JmdictDictionary;
   readonly dictionaries;

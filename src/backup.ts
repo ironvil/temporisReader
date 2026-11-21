@@ -1,6 +1,6 @@
 /**
  * Whole-library backup: one JSON file with the library list (titles, chapters' sources, reading
- * progress), every book's source texts, known-word lists, the reader's own words and settings. Derived files (content
+ * progress), every book's source texts, known-word lists, the reader's own words, reading speed and settings. Derived files (content
  * indexes, word counts) are rebuilt on demand; dictionaries are re-downloaded.
  *
  * Linked files (EPUBs) aren't in the backup, only their reference and checksum: after restoring on
@@ -12,6 +12,7 @@ import { getSettings, type Settings } from './settings';
 import { readText, removeDir, writeJson, writeText } from './storage';
 import { parseKnownWords } from './vocab/known-words';
 import { parseUserDictionary, userDictionaryPath } from './vocab/user-dictionary';
+import { parseReadingSpeed, readingSpeedPath } from './reader/reading-speed';
 
 export const BACKUP_APP = 'temporis-reader';
 export const BACKUP_VERSION = 1;
@@ -29,6 +30,8 @@ export interface Backup {
   knownWords: Record<string, string>;
   /** Language id → the reader's own words (user-dictionary file text). Missing in backups from before 0.19. */
   userWords?: Record<string, string>;
+  /** Language id → reading-speed file text (the pages it's worked out from). Missing before 0.21. */
+  readingSpeed?: Record<string, string>;
 }
 
 export async function createBackup(): Promise<Backup> {
@@ -53,6 +56,11 @@ export async function createBackup(): Promise<Backup> {
     const text = await readText(userDictionaryPath(lang.id));
     if (text !== null) userWords[lang.id] = text;
   }
+  const readingSpeed: Record<string, string> = {};
+  for (const lang of languages) {
+    const text = await readText(readingSpeedPath(lang.id));
+    if (text !== null) readingSpeed[lang.id] = text;
+  }
   return {
     app: BACKUP_APP,
     backupVersion: BACKUP_VERSION,
@@ -63,6 +71,7 @@ export async function createBackup(): Promise<Backup> {
     files,
     knownWords,
     userWords,
+    readingSpeed,
   };
 }
 
@@ -102,10 +111,17 @@ export function parseBackup(text: string): Backup {
       parseUserDictionary(text);
     }
   }
+  if (data.readingSpeed !== undefined) {
+    if (!isObject(data.readingSpeed)) throw new Error('The backup’s reading speed is damaged');
+    for (const text of Object.values(data.readingSpeed)) {
+      if (typeof text !== 'string') throw new Error('The backup’s reading speed is damaged');
+      parseReadingSpeed(text);
+    }
+  }
   return data as unknown as Backup;
 }
 
-/** Replaces all books, progress, known words, own words and settings with the backup's. Reload the app afterwards. */
+/** Replaces all books, progress, known words, own words, reading speed and settings with the backup's. Reload the app afterwards. */
 export async function restoreBackup(backup: Backup): Promise<void> {
   await removeDir('books');
   await removeDir('derived');
@@ -120,6 +136,10 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   await removeDir('user-dictionary');
   for (const [lang, text] of Object.entries(backup.userWords ?? {})) {
     if (/^[a-z-]+$/i.test(lang)) await writeText(userDictionaryPath(lang), text);
+  }
+  await removeDir('reading-speed');
+  for (const [lang, text] of Object.entries(backup.readingSpeed ?? {})) {
+    if (/^[a-z-]+$/i.test(lang)) await writeText(readingSpeedPath(lang), text);
   }
   await writeJson('settings.json', backup.settings ?? {});
 }

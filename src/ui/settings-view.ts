@@ -15,6 +15,7 @@ import { decodeText } from '@temporis/book-parser';
 import { exportTextFile } from '../export';
 import { FONT_SIZES, getSettings, updateSettings, type Theme } from '../settings';
 import { knownWords, parseKnownWords, today } from '../vocab/known-words';
+import { MIN_PAGES, readingSpeed } from '../reader/reading-speed';
 import { el, formatBytes, toast } from './dom';
 import { icon, iconButton } from './icons';
 import { WEB_APP } from '../web-app';
@@ -416,7 +417,48 @@ export class SettingsView {
       bar,
       dictionaryRows,
       lang.settingsRows?.() ?? null,
+      await this.readingSpeedRow(lang),
       await this.knownWordsRow(lang),
+    );
+  }
+
+  /** Words per minute, from the pages read in this language (src/reader/reading-speed.ts). */
+  private async readingSpeedRow(lang: LanguageModule): Promise<HTMLElement> {
+    const store = readingSpeed(lang.id);
+    await store.load();
+    const summary = el('div', { class: 'reading-speed-value' });
+    const reset = el('button', { type: 'button', class: 'button secondary' }, 'Reset');
+    const draw = () => {
+      const speed = store.speed();
+      if (speed) {
+        const rates = [
+          speed.wordsPerMinute === null ? null : `${Math.round(speed.wordsPerMinute).toLocaleString()} words per minute`,
+          // Without a word count, characters are all there is to show.
+          lang.charactersPerMinute || speed.wordsPerMinute === null ? `${Math.round(speed.lettersPerMinute).toLocaleString()} characters per minute` : null,
+        ].filter((r) => r !== null);
+        summary.replaceChildren(el('strong', {}, rates.join(' · ')), el('span', { class: 'muted' }, ` · from ${speed.pages.toLocaleString()} pages`));
+      } else {
+        summary.replaceChildren(el('span', { class: 'muted' }, `Not enough reading yet: ${Math.min(store.usablePages(), MIN_PAGES)} of ${MIN_PAGES} pages`));
+      }
+      reset.hidden = !speed && !store.usablePages();
+    };
+    reset.addEventListener('click', async () => {
+      if (!confirm(`Reset your ${lang.name} reading speed? It’s worked out again from the pages you read next.`)) return;
+      await store.reset();
+    });
+    this.pendingCleanups.push(store.onChange(draw));
+    draw();
+    return el(
+      'div',
+      { class: 'dict-row', 'data-reading-speed': lang.id },
+      el('div', {}, el('strong', {}, 'Reading speed')),
+      summary,
+      el(
+        'p',
+        { class: 'setting-help' },
+        `From pages read for at least 10 seconds, with recent ones counting most. Pages read much faster or slower than usual (skimmed, or left open) are left out. Shows the time left in a chapter and book at the bottom of the reader.`,
+      ),
+      el('div', { class: 'actions' }, reset),
     );
   }
 
