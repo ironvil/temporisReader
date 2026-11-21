@@ -1,13 +1,14 @@
 # Publishes the web version (npm run build:web, src/web-app.ts) to GitHub Pages, with fresh
-# copies of the dictionaries it serves itself. Weekly too, so those copies stay current.
-# One-time setup: Settings → Pages → Source: GitHub Actions.
+# copies of the dictionaries it serves itself. Only from the web-app branch: main is where work
+# and Android releases happen, and web-app is moved up to main when the web version should get it.
+# Weekly too (from web-app as well), so the dictionary copies stay current.
+# One-time setup: Settings → Pages → Source: GitHub Actions, and web-app allowed under
+# Settings → Environments → github-pages.
 name: Web app
 
 on:
   push:
-    # web-app: while the web version is being tried out on its branch. Pages only deploys from
-    # branches allowed in Settings → Environments → github-pages.
-    branches: [main, web-app]
+    branches: [web-app]
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:
@@ -29,6 +30,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Scheduled runs start from the default branch (main); publish web-app all the same.
+          ref: web-app
       - uses: actions/setup-node@v7
         with:
           node-version: 24

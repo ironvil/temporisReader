@@ -137,7 +137,9 @@ Playwright's Android driver is installed by the script.
 ## Web version
 
 For iPhones and iPads without the App Store: the same app, built with `npm run build:web` and
-published to GitHub Pages by `.github/workflows/web-app.yml` (on push, and weekly). In Safari,
+published to GitHub Pages by `.github/workflows/web-app.yml` from the `web-app` branch (on push, and
+weekly). Work and Android releases happen on `main`; to publish to the web, move `web-app` up to `main`
+(`git push origin main:web-app`), so changes can be tried on Android before web users get them. In Safari,
 Share → Add to Home Screen gives a full-screen app that opens offline (a service worker,
 `web/sw.js`, keeps the app's files). `src/web-app.ts` holds what differs from the APK:
 
