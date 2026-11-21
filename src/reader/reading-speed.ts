@@ -13,10 +13,11 @@
  *   short quick pages would skew upwards.
  *
  * Time is measured in characters, which every language and segmenter agrees on; words per minute
- * is characters per minute times the words per character seen on the same pages. Time left in a
+ * is characters per minute times the words per character seen on the same pages, and characters
+ * per minute as shown (Chinese, Japanese) count letters only, without punctuation, spaces or line breaks. Time left in a
  * chapter or book then needs only character offsets, not segmenting the rest of the book.
  *
- *   reading-speed/<lang>.json: { "version": 1, "pages": [{ "at": 1795000000000, "chars": 812, "words": 160, "ms": 41000 }] }
+ *   reading-speed/<lang>.json: { "version": 1, "pages": [{ "at": 1795000000000, "chars": 812, "letters": 700, "words": 160, "ms": 41000 }] }
  */
 import { readText, removeFile, writeJson } from '../storage';
 
@@ -25,6 +26,8 @@ export interface PageSample {
   at: number;
   /** Characters on the page. */
   chars: number;
+  /** Letters and digits on the page: `chars` without punctuation, spaces and line breaks. */
+  letters: number;
   /** Words on the page, or null when they couldn't be counted (dictionary not loaded). */
   words: number | null;
   /** How long the page was read, in ms, not counting time with the app in the background. */
@@ -40,6 +43,8 @@ export interface ReadingSpeed {
   charsPerMinute: number;
   /** Null until some pages had their words counted. */
   wordsPerMinute: number | null;
+  /** Letters and digits per minute: characters per minute as a reader means it. */
+  lettersPerMinute: number;
   /** Pages the estimate is based on (after outliers are dropped). */
   pages: number;
 }
@@ -82,9 +87,11 @@ export function estimateSpeed(samples: PageSample[], now = Date.now()): ReadingS
   let ms = 0;
   let countedChars = 0;
   let countedWords = 0;
+  let letters = 0;
   for (const s of usable) {
     const weight = 0.5 ** ((now - s.at) / DAY / HALF_LIFE_DAYS);
     chars += weight * s.chars;
+    letters += weight * s.letters;
     ms += weight * s.ms;
     if (s.words !== null) {
       countedChars += weight * s.chars;
@@ -95,6 +102,7 @@ export function estimateSpeed(samples: PageSample[], now = Date.now()): ReadingS
   return {
     charsPerMinute,
     wordsPerMinute: countedChars > 0 ? charsPerMinute * (countedWords / countedChars) : null,
+    lettersPerMinute: charsPerMinute * (letters / chars),
     pages: usable.length,
   };
 }
@@ -119,7 +127,12 @@ export function parseReadingSpeed(text: string): PageSample[] {
   if (!data || typeof data !== 'object' || !Array.isArray(data.pages)) throw new Error('Not a reading-speed file');
   return data.pages.filter(
     (p): p is PageSample =>
-      !!p && typeof p.at === 'number' && typeof p.chars === 'number' && typeof p.ms === 'number' && (p.words === null || typeof p.words === 'number'),
+      !!p &&
+      typeof p.at === 'number' &&
+      typeof p.chars === 'number' &&
+      typeof p.letters === 'number' &&
+      typeof p.ms === 'number' &&
+      (p.words === null || typeof p.words === 'number'),
   );
 }
 

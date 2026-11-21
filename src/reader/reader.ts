@@ -451,11 +451,13 @@ export class Reader {
     const lang = this.lang;
     const ms = this.readingTimeOnPage();
     if (!lang || !this.book || ms < MIN_SAMPLE_MS) return;
-    const chars = (this.page < this.pageCount - 1 ? this.pageStart(this.page + 1) : this.chapterEnd()) - this.pageStart(this.page);
+    const start = this.pageStart(this.page);
+    const chars = (this.page < this.pageCount - 1 ? this.pageStart(this.page + 1) : this.chapterEnd()) - start;
     // A chapter's last page or a title page says little about speed.
     if (!Number.isFinite(chars) || chars < this.charsPerPage() * 0.6) return;
+    const letters = this.book.content.slice(start, start + chars).match(/[\p{L}\p{N}]/gu)?.length ?? 0;
     const words = lang.ready() ? this.wordsOnPage(this.page, lang).length : null;
-    void readingSpeed(lang.id).record({ at: Date.now(), chars, words, ms });
+    void readingSpeed(lang.id).record({ at: Date.now(), chars, letters, words, ms });
   }
 
   /** "12 min left in chapter" and "5 h left in book", once there's a reading speed. */

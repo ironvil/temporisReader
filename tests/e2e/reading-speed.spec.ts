@@ -10,6 +10,7 @@ import { addChinese, chineseBook, closeSettings, importBook, nextPage, openFirst
 interface Sample {
   at: number;
   chars: number;
+  letters: number;
   words: number | null;
   ms: number;
 }
@@ -66,7 +67,7 @@ test('pages read become a reading speed, shown in settings and as time left in t
   }
   await expect.poll(async () => (await samples(page)).length).toBe(10);
   const read = await samples(page);
-  expect(read.every((s) => s.ms === 30_000 && s.chars > 0 && s.words! > 0)).toBe(true);
+  expect(read.every((s) => s.ms === 30_000 && s.chars > 0 && s.letters > 0 && s.letters < s.chars && s.words! > 0)).toBe(true);
 
   await expect(chapterLeft).not.toHaveClass(/empty/);
   await expect(chapterLeft).toContainText(/^\d+ min|^<1 min/);
@@ -86,9 +87,12 @@ test('pages read become a reading speed, shown in settings and as time left in t
   const all = await samples(page);
   const words = all.reduce((n, s) => n + s.words!, 0);
   const ms = all.reduce((n, s) => n + s.ms, 0);
+  const letters = all.reduce((n, s) => n + s.letters, 0);
   await openLanguageSettings(page, 'zh');
   const row = page.locator('[data-reading-speed="zh"]');
-  await expect(row).toContainText(`${Math.round((words / ms) * 60_000)} words per minute · from 11 pages`);
+  await expect(row).toContainText(
+    `${Math.round((words / ms) * 60_000)} words per minute · ${Math.round((letters / ms) * 60_000)} characters per minute · from 11 pages`,
+  );
 
   await page.once('dialog', (d) => d.accept());
   await row.getByRole('button', { name: 'Reset' }).click();
@@ -99,7 +103,7 @@ test('pages read become a reading speed, shown in settings and as time left in t
 });
 
 test('reading speed is in the backup and comes back with it', async ({ page }) => {
-  const pages = Array.from({ length: 12 }, (_, i) => ({ at: Date.now() - i * 60_000, chars: 300, words: 200, ms: 60_000 }));
+  const pages = Array.from({ length: 12 }, (_, i) => ({ at: Date.now() - i * 60_000, chars: 300, letters: 250, words: 200, ms: 60_000 }));
   const backup = {
     app: 'temporis-reader',
     backupVersion: 1,
@@ -121,7 +125,7 @@ test('reading speed is in the backup and comes back with it', async ({ page }) =
   await expect(page.locator('body[data-ready]')).toBeAttached();
 
   await openLanguageSettings(page, 'zh');
-  await expect(page.locator('[data-reading-speed="zh"]')).toContainText('200 words per minute · from 12 pages');
+  await expect(page.locator('[data-reading-speed="zh"]')).toContainText('200 words per minute · 250 characters per minute · from 12 pages');
 
   await page.getByRole('button', { name: 'Back to settings' }).click();
   const pending = page.waitForEvent('download');

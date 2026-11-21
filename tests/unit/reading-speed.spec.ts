@@ -4,9 +4,9 @@ import { estimateSpeed, formatDuration, MIN_PAGES, parseReadingSpeed, usableSamp
 const NOW = Date.UTC(2026, 10, 21);
 const DAY = 24 * 60 * 60_000;
 
-/** `count` pages of 600 characters and 150 words, read at `cpm` characters per minute. */
+/** `count` pages of 600 characters (500 of them letters) and 150 words, read at `cpm` characters per minute. */
 const pages = (count: number, cpm: number, daysAgo = 0): PageSample[] =>
-  Array.from({ length: count }, (_, i) => ({ at: NOW - daysAgo * DAY - i * 60_000, chars: 600, words: 150, ms: (600 / cpm) * 60_000 }));
+  Array.from({ length: count }, (_, i) => ({ at: NOW - daysAgo * DAY - i * 60_000, chars: 600, letters: 500, words: 150, ms: (600 / cpm) * 60_000 }));
 
 test('no speed until enough pages have been read', () => {
   expect(estimateSpeed(pages(MIN_PAGES - 1, 600), NOW)).toBeNull();
@@ -14,14 +14,16 @@ test('no speed until enough pages have been read', () => {
   expect(speed.pages).toBe(MIN_PAGES);
   expect(speed.charsPerMinute).toBeCloseTo(600);
   expect(speed.wordsPerMinute).toBeCloseTo(150);
+  // Characters as a reader counts them: no punctuation, spaces or line breaks.
+  expect(speed.lettersPerMinute).toBeCloseTo(500);
 });
 
 test('skimmed pages and pages left open are left out', () => {
   const steady = pages(20, 600);
   const skimmed = pages(5, 6000); // ten times as fast: turning pages to find a place
   const idle = pages(3, 60); // ten times as slow: left open
-  const tooLong = [{ at: NOW, chars: 600, words: 150, ms: 20 * 60_000 }];
-  const tooShort = [{ at: NOW, chars: 600, words: 150, ms: 5_000 }];
+  const tooLong = [{ at: NOW, chars: 600, letters: 500, words: 150, ms: 20 * 60_000 }];
+  const tooShort = [{ at: NOW, chars: 600, letters: 500, words: 150, ms: 5_000 }];
   const speed = estimateSpeed([...steady, ...skimmed, ...idle, ...tooLong, ...tooShort], NOW)!;
   expect(speed.pages).toBe(20);
   expect(speed.charsPerMinute).toBeCloseTo(600);
@@ -39,8 +41,8 @@ test('recent pages count more, and old ones not at all', () => {
 
 test('speed is total text over total time, so short quick pages don’t skew it', () => {
   // 10 pages of 1000 characters in 2 min each, 10 of 300 in 0.4 min: 13000 characters in 24 min.
-  const long = Array.from({ length: 10 }, (_, i) => ({ at: NOW - i, chars: 1000, words: 250, ms: 120_000 }));
-  const short = Array.from({ length: 10 }, (_, i) => ({ at: NOW - i, chars: 300, words: 75, ms: 24_000 }));
+  const long = Array.from({ length: 10 }, (_, i) => ({ at: NOW - i, chars: 1000, letters: 1000, words: 250, ms: 120_000 }));
+  const short = Array.from({ length: 10 }, (_, i) => ({ at: NOW - i, chars: 300, letters: 300, words: 75, ms: 24_000 }));
   expect(estimateSpeed([...long, ...short], NOW)!.charsPerMinute).toBeCloseTo(13000 / 24);
 });
 
@@ -62,7 +64,7 @@ test('durations', () => {
 });
 
 test('reading-speed files are checked, dropping damaged pages', () => {
-  const good = { at: 1, chars: 600, words: null, ms: 30_000 };
+  const good = { at: 1, chars: 600, letters: 500, words: null, ms: 30_000 };
   expect(parseReadingSpeed(JSON.stringify({ version: 1, pages: [good, { at: 'x' }, null] }))).toEqual([good]);
   expect(() => parseReadingSpeed('{"words":{}}')).toThrow();
 });

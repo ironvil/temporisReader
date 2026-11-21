@@ -422,9 +422,12 @@ export class SettingsView {
     const draw = () => {
       const speed = store.speed();
       if (speed) {
-        const rate = speed.wordsPerMinute ?? speed.charsPerMinute;
-        const unit = speed.wordsPerMinute === null ? 'characters per minute' : 'words per minute';
-        summary.replaceChildren(el('strong', {}, `${Math.round(rate).toLocaleString()} ${unit}`), el('span', { class: 'muted' }, ` · from ${speed.pages.toLocaleString()} pages`));
+        const rates = [
+          speed.wordsPerMinute === null ? null : `${Math.round(speed.wordsPerMinute).toLocaleString()} words per minute`,
+          // Without a word count, characters are all there is to show.
+          lang.charactersPerMinute || speed.wordsPerMinute === null ? `${Math.round(speed.lettersPerMinute).toLocaleString()} characters per minute` : null,
+        ].filter((r) => r !== null);
+        summary.replaceChildren(el('strong', {}, rates.join(' · ')), el('span', { class: 'muted' }, ` · from ${speed.pages.toLocaleString()} pages`));
       } else {
         summary.replaceChildren(el('span', { class: 'muted' }, `Not enough reading yet: ${Math.min(store.usablePages(), MIN_PAGES)} of ${MIN_PAGES} pages`));
       }
